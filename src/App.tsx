@@ -23,6 +23,7 @@ type Tab = 'today' | 'workout' | 'plan' | 'profile' | 'progress' | 'nutrition';
 export const App: React.FC = () => {
   const { init, initialized, currentUser, onboardingRequired, forceInit } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>('today');
+  const [previousTab, setPreviousTab] = useState<Tab>('plan');
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showBypassNotice, setShowBypassNotice] = useState<boolean>(false);
   const [showNutritionNotice, setShowNutritionNotice] = useState<boolean>(false);
@@ -68,12 +69,12 @@ export const App: React.FC = () => {
 
   const handleStartWorkout = (dateStr: string) => {
     setWorkoutDate(dateStr);
+    setPreviousTab(activeTab === 'workout' ? 'plan' : activeTab);
     setActiveTab('workout');
   };
 
   const navItems: Array<{ id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: 'today', label: 'Сегодня', icon: Calendar },
-    { id: 'workout', label: 'Зал', icon: Dumbbell },
     { id: 'plan', label: 'План', icon: CalendarDays },
     { id: 'profile', label: 'Профиль', icon: User },
     { id: 'progress', label: 'Прогресс', icon: TrendingUp },
@@ -137,7 +138,8 @@ export const App: React.FC = () => {
           <WorkoutScreen
             selectedDate={workoutDate}
             onDateChange={(d) => setWorkoutDate(d)}
-            onFinish={() => setActiveTab('plan')}
+            onFinish={() => setActiveTab(previousTab === 'workout' ? 'plan' : previousTab)}
+            onBack={() => setActiveTab(previousTab === 'workout' ? 'plan' : previousTab)}
           />
         )}
         {activeTab === 'plan' && (
@@ -167,25 +169,27 @@ export const App: React.FC = () => {
                 }}
                 className={`flex-1 min-h-[52px] flex flex-col items-center justify-center py-1.5 px-0.5 rounded-none transition-colors border-t-2 -mt-[2px] ${
                   isActive
-                    ? 'border-yellow-400 bg-neutral-950 text-yellow-400 font-black'
+                    ? isProfile
+                      ? 'border-white bg-neutral-950 text-white font-black shadow-[0_0_12px_rgba(255,255,255,0.2)]'
+                      : 'border-yellow-400 bg-neutral-950 text-yellow-400 font-black'
                     : isProfile
-                    ? 'border-transparent text-yellow-300 hover:text-yellow-200 hover:bg-neutral-950'
+                    ? 'border-transparent text-white hover:text-neutral-200 hover:bg-neutral-950'
                     : 'border-transparent text-neutral-400 hover:text-white hover:bg-neutral-950'
                 }`}
               >
                 <Icon
                   className={`w-5 h-5 ${
-                    isActive
+                    isProfile
+                      ? 'stroke-[2.6] text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]'
+                      : isActive
                       ? 'stroke-[2.5] text-yellow-400'
-                      : isProfile
-                      ? 'stroke-[2.4] text-yellow-300 drop-shadow-[0_0_6px_rgba(250,204,21,0.5)]'
                       : 'stroke-2'
                   }`}
                 />
                 <span
                   className={`text-[10px] mt-1 font-mono uppercase tracking-wider truncate max-w-[56px] ${
                     isProfile
-                      ? 'font-black text-yellow-300 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] tracking-widest'
+                      ? 'font-black text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)] tracking-widest'
                       : isActive
                       ? 'font-black'
                       : 'font-bold'

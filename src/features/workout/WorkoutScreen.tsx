@@ -6,10 +6,12 @@ import type { Session, SetType, SetLog, Slot, ExerciseLog } from '../../domain/t
 import { suggest, calcE1RM } from '../../domain/progression';
 import {
   getOrCreateSessionForDate,
-  getCurrentLiftE1RM,
-  getLastLoggedSets,
   isNextUpcomingSessionForSlot,
 } from '../../domain/workoutHelper';
+import {
+  getLastLoggedSetsForVariation,
+  getCurrentLiftE1RMForVariation,
+} from '../../domain/equipmentAdapter';
 import {
   CARDIO_TYPES,
   calculateCardioCalories,
@@ -36,6 +38,7 @@ import {
   Calendar,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   SlidersHorizontal,
   X,
   RotateCcw,
@@ -45,6 +48,7 @@ interface WorkoutScreenProps {
   selectedDate: string; // YYYY-MM-DD
   onDateChange?: (date: string) => void;
   onFinish?: () => void;
+  onBack?: () => void;
 }
 
 const SET_TYPE_LABELS: Record<SetType, { label: string; badge: string }> = {
@@ -60,6 +64,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
   selectedDate,
   onDateChange,
   onFinish,
+  onBack,
 }) => {
   const { program, sessions, settings, saveSession } = useAppStore();
 
@@ -265,6 +270,16 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
       <div className="bg-black border-2 border-yellow-400 rounded-none p-4 mb-4 shadow-[0_0_15px_rgba(250,204,21,0.15)]">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1 bg-neutral-950 border border-yellow-400 hover:bg-yellow-400 hover:text-black text-yellow-400 text-xs font-mono font-black uppercase transition-all shadow-[0_0_8px_rgba(250,204,21,0.2)] active:scale-95"
+                title="Назад"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Назад</span>
+              </button>
+            )}
             <span className="capitalize text-xs font-mono font-bold text-neutral-300">
               {formattedDate}
             </span>
@@ -399,10 +414,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
           const currentVariantIndex = entry.variant ?? 0;
           const currentVariant = rx.opts[currentVariantIndex] ?? rx.opts[0];
 
-          // Compute reference e1RM for this lift
-          const { value: refE1rm, check: refCheck } = getCurrentLiftE1RM(
+          // Compute reference e1RM for this lift adapted to current variation
+          const { value: refE1rm, check: refCheck, adaptedFrom: e1rmAdaptedFrom } = getCurrentLiftE1RMForVariation(
             sessions,
-            slot.lift,
+            slot.id,
+            currentVariation,
             program,
             settings
           );
@@ -421,8 +437,14 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
             todayStr
           );
 
-          // Get last logged sets for "Как в прошлый раз"
-          const lastLogged = getLastLoggedSets(sessions, slot.id, program);
+          // Get last logged sets adapted to current variation
+          const lastLoggedResult = getLastLoggedSetsForVariation(
+            sessions,
+            slot.id,
+            currentVariation,
+            program
+          );
+          const lastLogged = lastLoggedResult?.sets ?? null;
 
           // Handler: Accept Suggestion
           const handleAcceptSuggestion = () => {
@@ -712,6 +734,14 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                 → СЛЕДУЮЩАЯ
                               </span>
                             )}
+                            {e1rmAdaptedFrom && (
+                              <span
+                                className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-yellow-400/20 text-yellow-400 border border-yellow-400/50 uppercase"
+                                title={`Адаптировано с ${e1rmAdaptedFrom}`}
+                              >
+                                ⚡ Снаряд: {e1rmAdaptedFrom} → {currentVariation}
+                              </span>
+                            )}
                             {refCheck && (
                               <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 border border-yellow-400 text-yellow-400 uppercase">
                                 Проверь ввод
@@ -743,10 +773,18 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                             <button
                               onClick={handleCopyLastTime}
                               className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 rounded-none text-xs font-mono font-bold uppercase tracking-wider border border-neutral-700 active:scale-95 transition-all flex items-center gap-1"
-                              title="Как в прошлый раз"
+                              title={
+                                lastLoggedResult?.adapted
+                                  ? `Адаптировано по весу из снаряда «${lastLoggedResult.sourceVariation}»`
+                                  : 'Как в прошлый раз'
+                              }
                             >
                               <History className="w-3.5 h-3.5 text-yellow-400" />
-                              <span>Как в прошлый раз</span>
+                              <span>
+                                {lastLoggedResult?.adapted
+                                  ? 'Как в прошлый раз (адаптировано)'
+                                  : 'Как в прошлый раз'}
+                              </span>
                             </button>
                           )}
 

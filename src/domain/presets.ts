@@ -769,22 +769,22 @@ export const PPL_PRESET: Program = {
   ],
 };
 
-// 4. PRAXIS PRO (4 Days Original: Mon / Tue / Fri / Sat)
-export const PRAXIS_PRO_PRESET: Program = {
+// 4. ПИВНОЙ СПЛИТ (4 Days: Mon / Tue / Fri / Sat — Текущая программа пользователя)
+export const BEER_SPLIT_PRESET: Program = {
   ...seedProgram,
-  id: 'preset-praxis-pro-4d',
-  name: 'Praxis Pro (4 дня · Силовой сплит)',
+  id: 'preset-beer-split-4d',
+  name: 'Пивной сплит (4 дня)',
   periodization: 'wave',
-  description: 'Оригинальный силовой сплит: Спина+Грудь верх, Ноги+Икры, Грудь база+Плечи, Руки (Бицепс+Трицепс). Проверенная периодизация.',
+  description: 'Авторский 4-дневный силовой сплит с волновой периодизацией (DUP): Спина+Грудь верх, Ноги+Икры, Базовая грудь+Плечи, Руки (Бицепс+Трицепс). Проверенная временем хардкорная классика: сочетает мощную базовую гипертрофию, силовые проходки и глубокую проработку рук и дельт с кардио в конце каждого дня.',
 };
 
 export const ALL_PRESETS: Array<{ key: string; title: string; subtitle: string; daysCount: string; program: Program }> = [
   {
-    key: 'praxis_pro',
-    title: 'Praxis Pro (Силовой сплит)',
-    subtitle: 'Спина+Грудь · Ноги · Грудь+Плечи · Руки',
+    key: 'beer_split',
+    title: '«Пивной сплит» (Текущая программа)',
+    subtitle: 'Спина+Грудь · Ноги · Грудь+Плечи · Руки · Волна',
     daysCount: '4 дня / нед',
-    program: PRAXIS_PRO_PRESET,
+    program: BEER_SPLIT_PRESET,
   },
   {
     key: 'fullbody',
