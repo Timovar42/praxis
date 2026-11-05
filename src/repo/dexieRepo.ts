@@ -3,7 +3,7 @@ import type { Program, Session, Settings, UserAccount } from '../domain/types';
 import type { AppEvent, Repository } from './repository';
 import { seedProgram } from '../data/seedProgram';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 1;
 
 export const DEFAULT_USER_ACCOUNT: UserAccount = {
   id: 'user_default',
@@ -14,7 +14,7 @@ export const DEFAULT_USER_ACCOUNT: UserAccount = {
   onboarded: true,
 };
 
-class WaveLogDB extends Dexie {
+class PraxisDB extends Dexie {
   programs!: Table<Program & { userId?: string }, string>;
   sessions!: Table<Session & { userId?: string }, string>;
   settings!: Table<Settings & { id: string; userId?: string }, string>;
@@ -22,34 +22,27 @@ class WaveLogDB extends Dexie {
   users!: Table<UserAccount, string>;
 
   constructor() {
-    super('WaveLogDB');
+    super('PraxisDB');
     this.version(1).stores({
-      programs: 'id',
-      sessions: 'id, date, day',
-      settings: 'id',
-      events: '++id, type, createdAt',
-    });
-    this.version(2).stores({
       programs: 'id, userId',
       sessions: 'id, date, day, userId',
       settings: 'id, userId',
       events: '++id, type, createdAt, userId',
       users: 'id, email',
-    }).upgrade(async (tx) => {
-      await tx.table('programs').toCollection().modify((p) => {
-        if (!p.userId) p.userId = 'user_default';
-      });
-      await tx.table('sessions').toCollection().modify((s) => {
-        if (!s.userId) s.userId = 'user_default';
-      });
-      await tx.table('settings').toCollection().modify((s) => {
-        if (!s.userId) s.userId = 'user_default';
-      });
     });
   }
 }
 
-const db = new WaveLogDB();
+const db = new PraxisDB();
+
+// Handle versionchange event so other tabs/workers do not block database upgrades
+if (typeof window !== 'undefined') {
+  db.on('versionchange', () => {
+    try {
+      db.close();
+    } catch {}
+  });
+}
 
 export const dexieRepo: Repository = {
   async getProgram(userId = 'user_default') {
@@ -183,19 +176,53 @@ export const dexieRepo: Repository = {
 
 // Initialize with default user and seed program if empty
 export async function initRepo() {
-  // Ensure default user exists
+  // 1. Ensure db is opened with strict timeout
+  await Promise.race([
+    db.open(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('IndexedDB PraxisDB open timeout')), 2500)
+    ),
+  ]);
+
+  // 2. Safe non-blocking migration from legacy WaveLogDB if present and PraxisDB is empty
+  try {
+    const sessionCount = await db.sessions.count();
+    if (sessionCount === 0) {
+      const legacyDb = new Dexie('WaveLogDB');
+      legacyDb.version(1).stores({
+        programs: 'id',
+        sessions: 'id, date, day',
+        settings: 'id',
+        events: '++id, type, createdAt',
+      });
+      const legacySessions = await Promise.race([
+        legacyDb.table('sessions').toArray(),
+        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 800)),
+      ]);
+      if (Array.isArray(legacySessions) && legacySessions.length > 0) {
+        for (const s of legacySessions) {
+          await db.sessions.put({ ...s, userId: s.userId || 'user_default' });
+        }
+      }
+      legacyDb.close();
+    }
+  } catch {
+    // Non-fatal fallback
+  }
+
+  // 3. Ensure default user exists
   const existingUser = await dexieRepo.getUser('user_default');
   if (!existingUser) {
     await dexieRepo.saveUser(DEFAULT_USER_ACCOUNT);
   }
 
-  // Ensure default program exists
+  // 4. Ensure default program exists
   const existingProgram = await dexieRepo.getProgram('user_default');
   if (!existingProgram) {
     await dexieRepo.saveProgram(seedProgram, 'user_default');
   }
 
-  // Ensure default settings exist
+  // 5. Ensure default settings exist
   const settings = await dexieRepo.getSettings('user_default');
   if (!settings) {
     await dexieRepo.saveSettings(

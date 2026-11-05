@@ -16,6 +16,7 @@ interface AppState {
   onboardingRequired: boolean;
 
   init(): Promise<void>;
+  forceInit(): void;
   switchUser(userId: string): Promise<void>;
   loginWithGoogle(account: {
     email: string;
@@ -32,6 +33,8 @@ interface AppState {
   refreshSessions(): Promise<void>;
 }
 
+let isInitializing = false;
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   users: [],
@@ -41,15 +44,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialized: false,
   onboardingRequired: false,
 
+  forceInit() {
+    const fallbackProfile: UserProfile = {
+      gender: 'male',
+      age: 18,
+      height: 183,
+      weight: 92,
+      bodyFatPct: 27,
+    };
+    set({
+      currentUser: DEFAULT_USER_ACCOUNT,
+      users: [DEFAULT_USER_ACCOUNT],
+      program: seedProgram,
+      sessions: [],
+      settings: {
+        rpeMode: 'mid',
+        formula: 'epley',
+        units: 'kg',
+        profile: fallbackProfile,
+      },
+      onboardingRequired: false,
+      initialized: true,
+    });
+  },
+
   async init() {
-    try {
+    if (get().initialized) return;
+    if (isInitializing) return;
+    isInitializing = true;
+
+    const initTask = async () => {
       await initRepo();
       const allUsers = await dexieRepo.getUsers();
-      const storedUserId = localStorage.getItem(ACTIVE_USER_KEY);
-      const activeUserId =
-        storedUserId && allUsers.some((u) => u.id === storedUserId)
-          ? storedUserId
-          : 'user_default';
+      
+      let activeUserId = 'user_default';
+      try {
+        const storedUserId = localStorage.getItem(ACTIVE_USER_KEY);
+        if (storedUserId && allUsers.some((u) => u.id === storedUserId)) {
+          activeUserId = storedUserId;
+        }
+      } catch {}
 
       let activeUser = await dexieRepo.getUser(activeUserId);
       if (!activeUser) {
@@ -57,7 +91,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         await dexieRepo.saveUser(activeUser);
       }
 
-      localStorage.setItem(ACTIVE_USER_KEY, activeUser.id);
+      try {
+        localStorage.setItem(ACTIVE_USER_KEY, activeUser.id);
+      } catch {}
 
       const [program, sessions, settings] = await Promise.all([
         dexieRepo.getProgram(activeUser.id),
@@ -89,8 +125,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         onboardingRequired: !activeUser.onboarded,
         initialized: true,
       });
+    };
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Praxis init timeout')), 2500)
+    );
+
+    try {
+      await Promise.race([initTask(), timeoutPromise]);
     } catch (err) {
-      console.error('Praxis: Failed to initialize from Dexie, fallback to in-memory:', err);
+      console.warn('Praxis: Dexie init timed out or failed, using safe fallback:', err);
+      const fallbackProfile: UserProfile = {
+        gender: 'male',
+        age: 18,
+        height: 183,
+        weight: 92,
+        bodyFatPct: 27,
+      };
       set({
         currentUser: DEFAULT_USER_ACCOUNT,
         users: [DEFAULT_USER_ACCOUNT],
@@ -100,11 +151,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           rpeMode: 'mid',
           formula: 'epley',
           units: 'kg',
-          profile: DEFAULT_USER_PROFILE,
+          profile: fallbackProfile,
         },
         onboardingRequired: false,
         initialized: true,
       });
+    } finally {
+      isInitializing = false;
     }
   },
 

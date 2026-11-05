@@ -21,15 +21,18 @@ import {
 type Tab = 'today' | 'workout' | 'plan' | 'progress' | 'program' | 'profile';
 
 export const App: React.FC = () => {
-  const { init, initialized, currentUser, onboardingRequired } = useAppStore();
+  const { init, initialized, currentUser, onboardingRequired, forceInit } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [showBypassNotice, setShowBypassNotice] = useState<boolean>(false);
   const [workoutDate, setWorkoutDate] = useState<string>(() =>
     format(new Date(), 'yyyy-MM-dd')
   );
 
   useEffect(() => {
     init();
+    const timer = setTimeout(() => setShowBypassNotice(true), 2500);
+    return () => clearTimeout(timer);
   }, [init]);
 
   if (!initialized) {
@@ -39,6 +42,19 @@ export const App: React.FC = () => {
         <p className="font-mono text-xs uppercase tracking-widest text-yellow-400 font-bold">
           Инициализация Praxis...
         </p>
+        {showBypassNotice && (
+          <div className="flex flex-col items-center gap-3 text-center max-w-xs mt-4 animate-fade-in">
+            <span className="text-[11px] font-mono text-neutral-400">
+              Загрузка локальной базы данных...
+            </span>
+            <button
+              onClick={() => forceInit()}
+              className="px-4 py-2 border-2 border-yellow-400 bg-neutral-950 text-yellow-400 hover:bg-yellow-400 hover:text-black font-mono text-xs font-black uppercase transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
+            >
+              Войти в приложение
+            </button>
+          </div>
+        )}
       </div>
     );
   }
