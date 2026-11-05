@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "deploy": "npm run build && gh-pages -d dist",
     "test": "node scripts/run-tests.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
@@ -31,6 +32,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/ui": "^5.1.0",
     "autoprefixer": "^10.6.2",
+    "gh-pages": "^6.3.0",
     "oxlint": "^1.90.0",
     "postcss": "^8.5.32",
     "tailwindcss": "^4.3.4",
