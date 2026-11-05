@@ -79,6 +79,7 @@ export interface Session {
 export interface UserProfile {
   gender: 'male' | 'female';
   age: number; // default: 18
+  height: number; // default: 183 (cm)
   weight: number; // default: 92 (kg)
   bodyFatPct: number; // default: 27 (%)
 }

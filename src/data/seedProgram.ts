@@ -9,7 +9,7 @@ const R = (
 
 export const seedProgram: Program = {
   id: 'wavelog-default',
-  name: 'Proxis v1',
+  name: 'Praxis v1',
   cycleStart: '2026-11-02',
   cycleWeeks: 3,
   rotation: {

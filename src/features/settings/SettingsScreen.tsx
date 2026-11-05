@@ -38,7 +38,7 @@ export const SettingsScreen: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `proxis-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `praxis-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -249,7 +249,7 @@ export const SettingsScreen: React.FC = () => {
 
         {/* App Info Footer */}
         <div className="text-center font-mono text-xs text-neutral-500 py-2">
-          <p className="font-bold text-neutral-400 uppercase tracking-widest">PROXIS · v1.0</p>
+          <p className="font-bold text-neutral-400 uppercase tracking-widest">PRAXIS · v1.0</p>
           <p className="text-[10px] mt-0.5 text-neutral-600">OFFLINE STRENGTH CYCLE TRACKER</p>
         </div>
       </div>

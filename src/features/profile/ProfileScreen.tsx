@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import { DEFAULT_USER_PROFILE } from '../../domain/cardio';
@@ -13,40 +13,75 @@ import {
   X,
   Check,
   Award,
+  Ruler,
+  Percent,
 } from 'lucide-react';
 
 export const ProfileScreen: React.FC = () => {
   const { settings, sessions, program, saveSettings } = useAppStore();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [weightInput, setWeightInput] = useState<string>(
-    settings?.profile?.weight?.toString() ?? DEFAULT_USER_PROFILE.weight.toString()
-  );
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const profile: UserProfile = useMemo(() => {
     return settings?.profile ?? DEFAULT_USER_PROFILE;
   }, [settings?.profile]);
 
+  // Form states for all editable profile parameters
+  const [gender, setGender] = useState<'male' | 'female'>(profile.gender);
+  const [ageInput, setAgeInput] = useState<string>(profile.age.toString());
+  const [heightInput, setHeightInput] = useState<string>((profile.height ?? 183).toString());
+  const [weightInput, setWeightInput] = useState<string>(profile.weight.toString());
+  const [fatInput, setFatInput] = useState<string>(profile.bodyFatPct.toString());
+
+  // Keep form inputs synced when settings change externally
+  useEffect(() => {
+    if (settings?.profile) {
+      setGender(settings.profile.gender);
+      setAgeInput(settings.profile.age.toString());
+      setHeightInput((settings.profile.height ?? 183).toString());
+      setWeightInput(settings.profile.weight.toString());
+      setFatInput(settings.profile.bodyFatPct.toString());
+    }
+  }, [settings?.profile]);
+
   // Handle saving profile changes
-  const handleUpdateProfile = async (patch: Partial<UserProfile>) => {
+  const handleSaveProfile = async (overrides?: Partial<UserProfile>) => {
     if (!settings) return;
-    const updatedProfile: UserProfile = { ...profile, ...patch };
+
+    const parsedAge = Math.max(10, Math.min(120, parseInt(ageInput, 10) || profile.age));
+    const parsedHeight = Math.max(100, Math.min(250, parseInt(heightInput, 10) || profile.height || 183));
+    const parsedWeight = Math.max(
+      30,
+      Math.min(300, parseFloat(weightInput.replace(',', '.')) || profile.weight)
+    );
+    const parsedFat = Math.max(
+      3,
+      Math.min(70, parseFloat(fatInput.replace(',', '.')) || profile.bodyFatPct)
+    );
+
+    const updatedProfile: UserProfile = {
+      gender: overrides?.gender ?? gender,
+      age: overrides?.age ?? parsedAge,
+      height: overrides?.height ?? parsedHeight,
+      weight: overrides?.weight ?? Math.round(parsedWeight * 10) / 10,
+      bodyFatPct: overrides?.bodyFatPct ?? Math.round(parsedFat * 10) / 10,
+      ...overrides,
+    };
+
     await saveSettings({
       ...settings,
       profile: updatedProfile,
     });
+
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+    setTimeout(() => setSavedSuccess(false), 2500);
   };
 
-  const handleWeightBlur = () => {
-    const parsed = parseFloat(weightInput.replace(',', '.'));
-    if (!isNaN(parsed) && parsed > 30 && parsed < 300) {
-      handleUpdateProfile({ weight: Math.round(parsed * 10) / 10 });
-    } else {
-      setWeightInput(profile.weight.toString());
-    }
-  };
+  // Derived body composition metrics
+  const hM = (profile.height ?? 183) / 100;
+  const bmi = Math.round((profile.weight / (hM * hM)) * 10) / 10;
+  const leanMass = Math.round(profile.weight * (1 - profile.bodyFatPct / 100) * 10) / 10;
+  const fatMass = Math.round(profile.weight * (profile.bodyFatPct / 100) * 10) / 10;
 
   // Compute aggregate stats from sessions
   const stats = useMemo(() => {
@@ -99,7 +134,7 @@ export const ProfileScreen: React.FC = () => {
               ПРОФИЛЬ АТЛЕТА
             </h1>
             <p className="text-[11px] font-mono text-neutral-400 uppercase tracking-widest">
-              Личные данные и статистика
+              Личные параметры и статистика
             </p>
           </div>
         </div>
@@ -115,34 +150,38 @@ export const ProfileScreen: React.FC = () => {
       </div>
 
       {savedSuccess && (
-        <div className="mb-4 p-2.5 bg-yellow-400 text-black font-mono text-xs font-black uppercase flex items-center gap-2 border border-yellow-400">
+        <div className="mb-4 p-2.5 bg-yellow-400 text-black font-mono text-xs font-black uppercase flex items-center gap-2 border border-yellow-400 shadow">
           <Check className="w-4 h-4 stroke-[3]" />
-          <span>Данные профиля обновлены!</span>
+          <span>Параметры профиля сохранены!</span>
         </div>
       )}
 
-      {/* User Metrics Card */}
+      {/* User Metrics Editable Card */}
       <div className="bg-black border-2 border-yellow-400 rounded-none p-4 mb-5 shadow-[0_0_15px_rgba(250,204,21,0.15)]">
         <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2">
           <span className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest flex items-center gap-1.5">
             <Scale className="w-4 h-4 stroke-[2.5]" />
-            Параметры тела
+            Параметры тела (редактируемые)
           </span>
           <span className="text-[10px] font-mono text-neutral-400 uppercase">
             Для точного расчёта кардио
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Gender */}
-          <div className="bg-neutral-950 border border-neutral-800 p-3">
+        {/* 5 Editable Parameter Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          {/* 1. Gender */}
+          <div className="bg-neutral-950 border border-neutral-800 p-2.5 flex flex-col justify-between">
             <div className="text-[10px] font-mono text-neutral-400 uppercase mb-1">Пол</div>
-            <div className="flex gap-1">
+            <div className="flex gap-1 mt-auto">
               <button
                 type="button"
-                onClick={() => handleUpdateProfile({ gender: 'male' })}
+                onClick={() => {
+                  setGender('male');
+                  handleSaveProfile({ gender: 'male' });
+                }}
                 className={`flex-1 py-1 text-xs font-mono font-black uppercase border transition-colors ${
-                  profile.gender === 'male'
+                  gender === 'male'
                     ? 'bg-yellow-400 text-black border-yellow-400'
                     : 'bg-black text-neutral-400 border-neutral-800 hover:text-white'
                 }`}
@@ -151,9 +190,12 @@ export const ProfileScreen: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => handleUpdateProfile({ gender: 'female' })}
+                onClick={() => {
+                  setGender('female');
+                  handleSaveProfile({ gender: 'female' });
+                }}
                 className={`flex-1 py-1 text-xs font-mono font-black uppercase border transition-colors ${
-                  profile.gender === 'female'
+                  gender === 'female'
                     ? 'bg-yellow-400 text-black border-yellow-400'
                     : 'bg-black text-neutral-400 border-neutral-800 hover:text-white'
                 }`}
@@ -163,20 +205,51 @@ export const ProfileScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Age */}
-          <div className="bg-neutral-950 border border-neutral-800 p-3">
+          {/* 2. Age */}
+          <div className="bg-neutral-950 border border-neutral-800 p-2.5">
             <div className="text-[10px] font-mono text-neutral-400 uppercase mb-1">Возраст</div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-mono font-black text-white">{profile.age}</span>
-              <span className="text-xs font-mono text-neutral-400">лет</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="10"
+                max="120"
+                value={ageInput}
+                onChange={(e) => setAgeInput(e.target.value)}
+                onBlur={() => handleSaveProfile()}
+                className="w-full h-8 bg-black border border-neutral-700 text-center font-mono font-black text-base text-white focus:outline-none focus:border-yellow-400 rounded-none"
+              />
+              <span className="text-xs font-mono text-neutral-400 shrink-0">лет</span>
             </div>
-            <div className="text-[9px] font-mono text-neutral-500 mt-0.5">18 лет</div>
+            <div className="text-[9px] font-mono text-neutral-500 mt-1">18 лет</div>
           </div>
 
-          {/* Weight */}
-          <div className="bg-neutral-950 border border-yellow-500/50 p-3">
+          {/* 3. Height */}
+          <div className="bg-neutral-950 border border-yellow-500/50 p-2.5">
+            <div className="text-[10px] font-mono text-yellow-400 uppercase mb-1 font-bold flex items-center gap-1">
+              <Ruler className="w-3 h-3" />
+              <span>Рост</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="100"
+                max="250"
+                value={heightInput}
+                onChange={(e) => setHeightInput(e.target.value)}
+                onBlur={() => handleSaveProfile()}
+                className="w-full h-8 bg-black border border-yellow-400 text-center font-mono font-black text-base text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 rounded-none"
+              />
+              <span className="text-xs font-mono text-neutral-400 shrink-0">см</span>
+            </div>
+            <div className="text-[9px] font-mono text-neutral-400 mt-1">183 см</div>
+          </div>
+
+          {/* 4. Weight */}
+          <div className="bg-neutral-950 border border-yellow-500/50 p-2.5">
             <div className="text-[10px] font-mono text-yellow-400 uppercase mb-1 font-bold">
-              Текущий вес (кг)
+              Вес (кг)
             </div>
             <div className="flex items-center gap-1">
               <input
@@ -184,28 +257,49 @@ export const ProfileScreen: React.FC = () => {
                 inputMode="decimal"
                 value={weightInput}
                 onChange={(e) => setWeightInput(e.target.value)}
-                onBlur={handleWeightBlur}
-                className="w-16 h-8 bg-black border border-yellow-400 text-center font-mono font-black text-base text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 rounded-none"
+                onBlur={() => handleSaveProfile()}
+                className="w-full h-8 bg-black border border-yellow-400 text-center font-mono font-black text-base text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 rounded-none"
               />
-              <span className="text-xs font-mono text-neutral-400">кг</span>
+              <span className="text-xs font-mono text-neutral-400 shrink-0">кг</span>
             </div>
-            <div className="text-[9px] font-mono text-neutral-400 mt-1">Норма: 91.3 — 93 кг</div>
+            <div className="text-[9px] font-mono text-neutral-400 mt-1">91.3 — 93 кг</div>
           </div>
 
-          {/* Body Fat */}
-          <div className="bg-neutral-950 border border-neutral-800 p-3">
-            <div className="text-[10px] font-mono text-neutral-400 uppercase mb-1">Процент жира</div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-mono font-black text-white">±{profile.bodyFatPct}</span>
-              <span className="text-xs font-mono text-neutral-400">%</span>
+          {/* 5. Body Fat % */}
+          <div className="bg-neutral-950 border border-neutral-800 p-2.5 col-span-2 sm:col-span-1">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase mb-1 flex items-center gap-1">
+              <Percent className="w-3 h-3" />
+              <span>Жир (%)</span>
             </div>
-            <div className="text-[9px] font-mono text-neutral-500 mt-0.5">Оценка ~27%</div>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={fatInput}
+                onChange={(e) => setFatInput(e.target.value)}
+                onBlur={() => handleSaveProfile()}
+                className="w-full h-8 bg-black border border-neutral-700 text-center font-mono font-black text-base text-white focus:outline-none focus:border-yellow-400 rounded-none"
+              />
+              <span className="text-xs font-mono text-neutral-400 shrink-0">%</span>
+            </div>
+            <div className="text-[9px] font-mono text-neutral-500 mt-1">~27%</div>
           </div>
         </div>
 
-        <div className="mt-3 pt-2 border-t border-neutral-900 flex items-center justify-between text-[11px] font-mono text-neutral-400">
-          <span>Формула расхода: MET × Вес (кг) × Время / 60</span>
-          <span className="text-yellow-400 font-bold">Активно</span>
+        {/* Save Parameters Button */}
+        <div className="mt-3.5 pt-3 border-t border-neutral-900 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[11px] font-mono text-neutral-400">
+            ИМТ: <strong className="text-white">{bmi}</strong> · Сухая масса: <strong className="text-yellow-400">{leanMass} кг</strong> · Жир: <strong className="text-neutral-300">{fatMass} кг</strong>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleSaveProfile()}
+            className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-mono font-black text-xs uppercase tracking-wider rounded-none border border-yellow-400 flex items-center gap-1.5 transition-all shadow active:scale-95"
+          >
+            <Check className="w-4 h-4 stroke-[3]" />
+            <span>Сохранить параметры</span>
+          </button>
         </div>
       </div>
 

@@ -19,6 +19,7 @@ export const CARDIO_TYPES: CardioTypeOption[] = [
 export const DEFAULT_USER_PROFILE: UserProfile = {
   gender: 'male',
   age: 18,
+  height: 183, // 183 см
   weight: 92, // 91.3 - 93 кг
   bodyFatPct: 27, // +-27%
 };

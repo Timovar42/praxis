@@ -20,8 +20,8 @@ export default defineConfig({
         clientsClaim: true,
       },
       manifest: {
-        name: 'Proxis',
-        short_name: 'Proxis',
+        name: 'Praxis',
+        short_name: 'Praxis',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',

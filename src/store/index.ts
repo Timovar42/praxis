@@ -31,17 +31,22 @@ export const useAppStore = create<AppState>((set) => ({
         dexieRepo.getSessions(),
         dexieRepo.getSettings(),
       ]);
-      const fallbackProfile = { gender: 'male' as const, age: 18, weight: 92, bodyFatPct: 27 };
+      const fallbackProfile = { gender: 'male' as const, age: 18, height: 183, weight: 92, bodyFatPct: 27 };
       set({
         program: program ?? seedProgram,
         sessions: sessions ?? [],
         settings: settings
-          ? { ...settings, profile: settings.profile ?? fallbackProfile }
+          ? {
+              ...settings,
+              profile: settings.profile
+                ? { ...fallbackProfile, ...settings.profile }
+                : fallbackProfile,
+            }
           : { rpeMode: 'mid', formula: 'epley', units: 'kg', profile: fallbackProfile },
         initialized: true,
       });
     } catch (err) {
-      console.error('Proxis: Failed to initialize from Dexie, fallback to in-memory:', err);
+      console.error('Praxis: Failed to initialize from Dexie, fallback to in-memory:', err);
       set({
         program: seedProgram,
         sessions: [],
@@ -49,7 +54,7 @@ export const useAppStore = create<AppState>((set) => ({
           rpeMode: 'mid',
           formula: 'epley',
           units: 'kg',
-          profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+          profile: { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
         },
         initialized: true,
       });

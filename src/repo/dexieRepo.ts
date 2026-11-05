@@ -89,12 +89,12 @@ export async function initRepo() {
       rpeMode: 'mid',
       formula: 'epley',
       units: 'kg',
-      profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+      profile: { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
     });
   } else if (!settings.profile) {
     await dexieRepo.saveSettings({
       ...settings,
-      profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+      profile: { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
     });
   }
 }

@@ -34,7 +34,7 @@ export const App: React.FC = () => {
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-neutral-400">
         <div className="w-12 h-12 border-2 border-neutral-800 border-t-yellow-400 rounded-none animate-spin mb-4" />
         <p className="font-mono text-xs uppercase tracking-widest text-yellow-400 font-bold">
-          Инициализация Proxis...
+          Инициализация Praxis...
         </p>
       </div>
     );
@@ -65,7 +65,7 @@ export const App: React.FC = () => {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="font-black text-lg tracking-wider uppercase font-mono text-white">
-                PROXIS
+                PRAXIS
               </span>
               <span className="text-[10px] text-yellow-400 font-mono font-bold uppercase tracking-widest border border-yellow-400/40 px-1 py-0.2">
                 PRO 1.0

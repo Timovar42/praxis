@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { calculateCardioCalories, getCardioMet, CARDIO_TYPES } from '../domain/cardio';
+import { calculateCardioCalories, getCardioMet, CARDIO_TYPES, DEFAULT_USER_PROFILE } from '../domain/cardio';
 
 describe('Cardio Calorie Calculations', () => {
+  it('has default user profile with 183 cm height', () => {
+    expect(DEFAULT_USER_PROFILE.height).toBe(183);
+    expect(DEFAULT_USER_PROFILE.weight).toBe(92);
+    expect(DEFAULT_USER_PROFILE.age).toBe(18);
+    expect(DEFAULT_USER_PROFILE.bodyFatPct).toBe(27);
+  });
   it('calculates calories based on MET, weight and duration', () => {
     // MET 4.3 (walking), 92 kg, 60 minutes = 4.3 * 92 * 1 = 395.6 -> 396
     const calsWalking60 = calculateCardioCalories('treadmill_walk', 60, 92);
