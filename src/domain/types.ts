@@ -1,0 +1,86 @@
+export type Zone = 'vol' | 'mid' | 'str';
+export type DayKey = 'mon' | 'tue' | 'wed' | 'fri' | 'sat';
+export type Kind = 'main' | 'compound' | 'isolation' | 'warmup';
+export type SetType = 'work' | 'warmup' | 'attack' | 'drop';
+export type Muscle = 'quads' | 'hams' | 'glutes' | 'chest' | 'back' | 'traps' | 'fdelts' | 'sdelts' | 'rdelts' | 'biceps' | 'triceps' | 'calves' | 'abs';
+
+// opts: [[sets, reps], ...], reps can be number or [min, max]
+export interface Rx {
+  opts: [number, number | [number, number]][];
+  rpe?: [number, number];
+  cap?: number;
+}
+
+export interface Slot {
+  id: string;
+  lift: string; // shared lift key for e1RM history
+  name: string;
+  day: DayKey;
+  kind: Kind;
+  inc: number; // rounding step in kg
+  optional?: boolean;
+  countsInVolume?: boolean; // default true
+  muscles: Partial<Record<Muscle, number>>; // 1 = direct, 0.5 = indirect
+  rx: Record<Zone, Rx>;
+}
+
+export interface Program {
+  id: string;
+  name: string;
+  cycleStart: string; // ISO date of Monday of week 1
+  cycleWeeks: number; // 3
+  rotation: Record<DayKey, Zone[]>; // zone per cycle week
+  days: Record<DayKey, { title: string; cardio?: { minutes: number; kind: string } }>;
+  slots: Slot[];
+}
+
+export interface SetLog {
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+  type: SetType;
+  done: boolean;
+}
+
+export interface ExerciseLog {
+  slotId: string;
+  zone: Zone;
+  variant: number; // index into rx.opts
+  rxSnapshot: Rx;
+  sets: SetLog[];
+  rpe?: number; // exercise-level RPE override
+  note?: string;
+  skipped?: boolean;
+}
+
+export interface Session {
+  id: string;
+  date: string; // YYYY-MM-DD
+  day: DayKey;
+  cycle: number;
+  week: number; // 1-based
+  entries: ExerciseLog[];
+  cardioDone?: boolean;
+  badDay?: boolean;
+  note?: string;
+}
+
+export interface Settings {
+  rpeMode: 'low' | 'mid' | 'high';
+  formula: 'epley' | 'brzycki';
+  units: 'kg';
+}
+
+export interface Suggestion {
+  weight: number;
+  reps: number | [number, number];
+  sets: number;
+  explanation: string;
+  cappedDown?: boolean;
+  check?: boolean;
+}
+
+export interface E1RMResult {
+  value: number;
+  check?: boolean; // true if capped at +5%
+}

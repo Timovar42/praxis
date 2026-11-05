@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg-primary: #000000;
+  --text-primary: #ffffff;
+  --accent-yellow: #facc15;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #000000;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  background-color: #000000;
+}
+
+input, textarea {
+  user-select: auto;
+}
+
+/* Strict corners & custom scrollbars for mobile */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+::-webkit-scrollbar-thumb {
+  background: #ca8a04;
+}
+
+/* Touch responsiveness */
+button, input, select, textarea {
+  touch-action: manipulation;
+}
