@@ -6,6 +6,8 @@ import { PlanScreen } from './features/plan/PlanScreen';
 import { ProgressScreen } from './features/progress/ProgressScreen';
 import { ProgramEditorScreen } from './features/program-editor/ProgramEditorScreen';
 import { ProfileScreen } from './features/profile/ProfileScreen';
+import { OnboardingScreen } from './features/auth/OnboardingScreen';
+import { GoogleAuthModal } from './features/auth/GoogleAuthModal';
 import { format } from 'date-fns';
 import {
   CalendarDays,
@@ -19,8 +21,9 @@ import {
 type Tab = 'today' | 'workout' | 'plan' | 'progress' | 'program' | 'profile';
 
 export const App: React.FC = () => {
-  const { init, initialized } = useAppStore();
+  const { init, initialized, currentUser, onboardingRequired } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>('today');
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [workoutDate, setWorkoutDate] = useState<string>(() =>
     format(new Date(), 'yyyy-MM-dd')
   );
@@ -40,6 +43,12 @@ export const App: React.FC = () => {
     );
   }
 
+  // If a new user signs up or lacks onboarding, force profile creation first
+  // so an isolated plan and calibrated settings are prepared
+  if (onboardingRequired) {
+    return <OnboardingScreen />;
+  }
+
   const handleStartWorkout = (dateStr: string) => {
     setWorkoutDate(dateStr);
     setActiveTab('workout');
@@ -57,7 +66,7 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col selection:bg-yellow-400 selection:text-black">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-black/95 backdrop-blur-md border-b-2 border-yellow-400 px-4 py-3">
+      <header className="sticky top-0 z-30 bg-black/95 backdrop-blur-md border-b-2 border-yellow-400 px-4 py-2.5">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-none bg-yellow-400 text-black flex items-center justify-center font-black shadow-[0_0_10px_rgba(250,204,21,0.4)]">
@@ -72,6 +81,33 @@ export const App: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* User Account / Auth Button */}
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="flex items-center gap-2 bg-neutral-950 border border-yellow-400/60 hover:border-yellow-400 px-2.5 py-1.5 transition-all text-left group active:scale-95"
+            title="Сменить аккаунт / Войти через Google"
+          >
+            {currentUser?.picture ? (
+              <img
+                src={currentUser.picture}
+                alt={currentUser.name}
+                className="w-5 h-5 rounded-none border border-yellow-400 object-cover"
+              />
+            ) : (
+              <div className="w-5 h-5 bg-yellow-400 text-black flex items-center justify-center font-black text-[10px] font-mono">
+                {currentUser?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+            )}
+            <div className="flex flex-col leading-tight">
+              <span className="text-[11px] font-mono font-bold text-white group-hover:text-yellow-400 transition-colors truncate max-w-[85px] sm:max-w-[130px]">
+                {currentUser?.name || 'Аккаунт'}
+              </span>
+              <span className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider">
+                {currentUser?.provider === 'google' ? 'Google' : 'Профиль'}
+              </span>
+            </div>
+          </button>
         </div>
       </header>
 
@@ -120,6 +156,11 @@ export const App: React.FC = () => {
           })}
         </div>
       </nav>
+      {/* Google & Multi-user Authentication Modal */}
+      <GoogleAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
     </div>
   );
 };

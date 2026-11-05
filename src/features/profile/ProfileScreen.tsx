@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import { SettingsScreen } from '../settings/SettingsScreen';
+import { GoogleAuthModal } from '../auth/GoogleAuthModal';
 import { DEFAULT_USER_PROFILE } from '../../domain/cardio';
 import type { UserProfile } from '../../domain/types';
 import {
@@ -15,11 +16,15 @@ import {
   Award,
   Ruler,
   Percent,
+  LogIn,
+  ShieldCheck,
+  Users,
 } from 'lucide-react';
 
 export const ProfileScreen: React.FC = () => {
-  const { settings, sessions, program, saveSettings } = useAppStore();
+  const { settings, sessions, program, saveSettings, currentUser, users, switchUser } = useAppStore();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const profile: UserProfile = useMemo(() => {
@@ -155,6 +160,90 @@ export const ProfileScreen: React.FC = () => {
           <span>Параметры профиля сохранены!</span>
         </div>
       )}
+
+      {/* Active Account & Google Auth Card */}
+      <div className="bg-black border-2 border-yellow-400 rounded-none p-4 mb-5 shadow-[0_0_15px_rgba(250,204,21,0.15)]">
+        <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2">
+          <span className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+            Аккаунт и изоляция данных
+          </span>
+          <span className="text-[10px] font-mono text-neutral-400 uppercase">
+            {currentUser?.provider === 'google' ? 'Google Account' : 'Локальный'}
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-950 border border-neutral-800 p-3">
+          <div className="flex items-center gap-3">
+            {currentUser?.picture ? (
+              <img
+                src={currentUser.picture}
+                alt={currentUser.name}
+                className="w-11 h-11 rounded-none border-2 border-yellow-400 object-cover"
+              />
+            ) : (
+              <div className="w-11 h-11 bg-yellow-400 text-black flex items-center justify-center font-black text-base font-mono">
+                {currentUser?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+            )}
+            <div>
+              <div className="font-mono font-black text-white text-sm flex items-center gap-2">
+                <span>{currentUser?.name || 'Атлет'}</span>
+                {currentUser?.id === 'user_default' && (
+                  <span className="text-[9px] bg-yellow-400 text-black px-1.5 py-0.2 font-mono font-black uppercase">
+                    Основной
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] font-mono text-neutral-400">
+                {currentUser?.email || 'Автономный режим на этом устройстве'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="flex items-center justify-center gap-2 px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-mono text-xs font-black uppercase rounded-none transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
+          >
+            <LogIn className="w-4 h-4 stroke-[2.5]" />
+            <span>Сменить / Войти</span>
+          </button>
+        </div>
+
+        {/* Quick Switch between saved athletes */}
+        {users.length > 1 && (
+          <div className="mt-3 pt-2.5 border-t border-neutral-900">
+            <div className="text-[10px] font-mono uppercase text-neutral-400 tracking-wider mb-2 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5" />
+              <span>Быстрое переключение профиля:</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {users.map((u) => {
+                const isSelected = u.id === currentUser?.id;
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => switchUser(u.id)}
+                    className={`px-2.5 py-1 text-[11px] font-mono uppercase rounded-none border transition-all flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'border-yellow-400 bg-yellow-400 text-black font-black'
+                        : 'border-neutral-800 bg-neutral-950 text-neutral-300 hover:border-neutral-700 hover:text-white'
+                    }`}
+                  >
+                    <span>{u.name}</span>
+                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-2.5 text-[10px] font-mono text-neutral-400 flex items-center gap-1.5">
+          <span className="text-yellow-400 font-bold">ℹ</span>
+          <span>Каждый атлет имеет персональный план, историю подходов и расчёт кардио.</span>
+        </div>
+      </div>
 
       {/* User Metrics Editable Card */}
       <div className="bg-black border-2 border-yellow-400 rounded-none p-4 mb-5 shadow-[0_0_15px_rgba(250,204,21,0.15)]">
@@ -400,6 +489,12 @@ export const ProfileScreen: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Google & Multi-user Authentication Modal */}
+      <GoogleAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
     </div>
   );
 };

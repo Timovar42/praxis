@@ -84,11 +84,22 @@ export interface UserProfile {
   bodyFatPct: number; // default: 27 (%)
 }
 
+export interface UserAccount {
+  id: string; // unique ID e.g. "user_default" or google sub
+  email: string;
+  name: string;
+  picture?: string;
+  provider: 'google';
+  createdAt: string;
+  onboarded: boolean;
+}
+
 export interface Settings {
   rpeMode: 'low' | 'mid' | 'high';
   formula: 'epley' | 'brzycki';
   units: 'kg';
   profile?: UserProfile;
+  googleClientId?: string;
 }
 
 export interface Suggestion {
