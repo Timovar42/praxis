@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  base: '/praxis/',
   plugins: [
     tailwindcss(),
     react(),
@@ -13,15 +14,14 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
       manifest: {
-        name: 'WaveLog',
+        name: 'WaveLog PRO',
         short_name: 'WaveLog',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#000000',
+        background_color: '#000000',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icons.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
       },
     }),
