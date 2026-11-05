@@ -31,18 +31,26 @@ export const useAppStore = create<AppState>((set) => ({
         dexieRepo.getSessions(),
         dexieRepo.getSettings(),
       ]);
+      const fallbackProfile = { gender: 'male' as const, age: 18, weight: 92, bodyFatPct: 27 };
       set({
         program: program ?? seedProgram,
         sessions: sessions ?? [],
-        settings: settings ?? { rpeMode: 'mid', formula: 'epley', units: 'kg' },
+        settings: settings
+          ? { ...settings, profile: settings.profile ?? fallbackProfile }
+          : { rpeMode: 'mid', formula: 'epley', units: 'kg', profile: fallbackProfile },
         initialized: true,
       });
     } catch (err) {
-      console.error('WaveLog: Failed to initialize from Dexie, fallback to in-memory:', err);
+      console.error('Proxis: Failed to initialize from Dexie, fallback to in-memory:', err);
       set({
         program: seedProgram,
         sessions: [],
-        settings: { rpeMode: 'mid', formula: 'epley', units: 'kg' },
+        settings: {
+          rpeMode: 'mid',
+          formula: 'epley',
+          units: 'kg',
+          profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+        },
         initialized: true,
       });
     }

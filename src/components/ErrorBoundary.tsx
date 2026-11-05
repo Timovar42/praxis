@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('WaveLog Uncaught error:', error, errorInfo);
+    console.error('Proxis Uncaught error:', error, errorInfo);
   }
 
   public render() {

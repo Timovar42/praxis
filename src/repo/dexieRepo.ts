@@ -85,6 +85,16 @@ export async function initRepo() {
   }
   const settings = await dexieRepo.getSettings();
   if (!settings) {
-    await dexieRepo.saveSettings({ rpeMode: 'mid', formula: 'epley', units: 'kg' });
+    await dexieRepo.saveSettings({
+      rpeMode: 'mid',
+      formula: 'epley',
+      units: 'kg',
+      profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+    });
+  } else if (!settings.profile) {
+    await dexieRepo.saveSettings({
+      ...settings,
+      profile: { gender: 'male', age: 18, weight: 92, bodyFatPct: 27 },
+    });
   }
 }

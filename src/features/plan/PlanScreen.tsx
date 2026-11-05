@@ -12,6 +12,7 @@ import {
   addDays,
   isBefore,
   isToday,
+  differenceInCalendarWeeks,
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import {
@@ -22,6 +23,7 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
+  Calendar,
 } from 'lucide-react';
 
 interface PlanScreenProps {
@@ -87,17 +89,36 @@ export const PlanScreen: React.FC<PlanScreenProps> = ({ onSelectDate }) => {
             <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
           </button>
 
-          <div className="text-center">
-            <div className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest">
-              {weekRotation && weekRotation.cycle > 0
-                ? `ЦИКЛ ${weekRotation.cycle} · НЕДЕЛЯ ${weekRotation.week} ИЗ ${program.cycleWeeks}`
-                : 'ВНЕ ЦИКЛА'}
+          <label className="relative text-center cursor-pointer group px-3 py-1.5 border border-yellow-500/40 hover:border-yellow-400 bg-neutral-950 transition-all rounded-none block">
+            <input
+              type="date"
+              value={format(displayedWeekMonday, 'yyyy-MM-dd')}
+              onChange={(e) => {
+                if (e.target.value) {
+                  const picked = parseISO(e.target.value);
+                  const diff = differenceInCalendarWeeks(picked, currentWeekMonday, { weekStartsOn: 1 });
+                  setWeekOffset(diff);
+                }
+              }}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+              title="Нажмите для быстрого перехода к дате"
+            />
+            <div className="flex items-center justify-center gap-1.5 text-xs font-mono font-black text-yellow-400 uppercase tracking-widest">
+              <Calendar className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>
+                {weekRotation && weekRotation.cycle > 0
+                  ? `ЦИКЛ ${weekRotation.cycle} · НЕДЕЛЯ ${weekRotation.week} ИЗ ${program.cycleWeeks}`
+                  : 'КАЛЕНДАРЬ'}
+              </span>
             </div>
             <div className="text-sm sm:text-base font-black text-white uppercase font-mono mt-0.5">
               {format(displayedWeekMonday, 'd MMMM', { locale: ru })} —{' '}
               {format(addDays(displayedWeekMonday, 6), 'd MMMM yyyy', { locale: ru })}
             </div>
-          </div>
+            <div className="text-[10px] font-mono text-neutral-400 group-hover:text-yellow-400 transition-colors">
+              [быстрый выбор даты]
+            </div>
+          </label>
 
           <button
             onClick={() => setWeekOffset((prev) => prev + 1)}

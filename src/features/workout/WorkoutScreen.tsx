@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../store';
 import { ZoneBadge } from '../../components/ZoneBadge';
 import { RestTimer } from './RestTimer';
-import type { Session, SetType, SetLog } from '../../domain/types';
+import type { Session, SetType, SetLog, Slot, ExerciseLog } from '../../domain/types';
 import { suggest, calcE1RM } from '../../domain/progression';
 import {
   getOrCreateSessionForDate,
@@ -10,6 +10,17 @@ import {
   getLastLoggedSets,
   isNextUpcomingSessionForSlot,
 } from '../../domain/workoutHelper';
+import {
+  CARDIO_TYPES,
+  calculateCardioCalories,
+  getCardioMet,
+  DEFAULT_USER_PROFILE,
+} from '../../domain/cardio';
+import {
+  EXERCISE_VARIATIONS,
+  QUICK_ADD_TEMPLATES,
+  type QuickAddTemplate,
+} from '../../domain/exerciseVariations';
 import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import {
@@ -23,6 +34,11 @@ import {
   Flame,
   Info,
   Calendar,
+  ArrowUp,
+  ArrowDown,
+  SlidersHorizontal,
+  X,
+  RotateCcw,
 } from 'lucide-react';
 
 interface WorkoutScreenProps {
@@ -54,6 +70,14 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
   const [quickReps, setQuickReps] = useState('');
   const [quickRpe, setQuickRpe] = useState('8');
 
+  // Day Customization Mode states
+  const [isEditingDay, setIsEditingDay] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addModalTab, setAddModalTab] = useState<'templates' | 'catalog' | 'custom'>('templates');
+  const [customExerciseName, setCustomExerciseName] = useState('');
+  const [customExerciseSets, setCustomExerciseSets] = useState('3');
+  const [customExerciseReps, setCustomExerciseReps] = useState('10');
+
   // Load or create session for selected date
   useEffect(() => {
     if (!program) return;
@@ -80,6 +104,118 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
   const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
 
+  // User weight for cardio calculations
+  const userWeight = settings?.profile?.weight ?? DEFAULT_USER_PROFILE.weight;
+
+  // Reorder exercise entries within the session
+  const handleMoveEntry = (index: number, direction: 'up' | 'down') => {
+    if (!activeSession) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= activeSession.entries.length) return;
+
+    updateSession((s) => {
+      const copy = [...s.entries];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return { ...s, entries: copy };
+    });
+  };
+
+  // Remove exercise from this specific day
+  const handleDeleteEntry = (index: number, name: string) => {
+    if (confirm(`Удалить упражнение "${name}" из этой тренировки?`)) {
+      updateSession((s) => {
+        const copy = s.entries.filter((_, i) => i !== index);
+        return { ...s, entries: copy };
+      });
+    }
+  };
+
+  // Add exercise from Quick Templates
+  const handleAddFromTemplate = (template: QuickAddTemplate) => {
+    updateSession((s) => {
+      const uniqueId = `adhoc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const zone = s.entries[0]?.zone ?? 'vol';
+      const variations = EXERCISE_VARIATIONS[template.lift] ?? [];
+      const newEntry: ExerciseLog = {
+        slotId: uniqueId,
+        zone,
+        variant: 0,
+        customName: template.name,
+        variation: variations[0],
+        rxSnapshot: {
+          opts: [[template.defaultSets, template.defaultReps]],
+          rpe: [7, 9],
+        },
+        sets: Array.from({ length: template.defaultSets }, () => ({
+          type: 'work',
+          done: false,
+        })),
+      };
+      return { ...s, entries: [...s.entries, newEntry] };
+    });
+    setIsAddModalOpen(false);
+  };
+
+  // Add exercise from Program Catalog
+  const handleAddFromCatalog = (slot: Slot) => {
+    updateSession((s) => {
+      const zone = s.entries[0]?.zone ?? 'vol';
+      const rx = slot.rx[zone] ?? slot.rx.vol;
+      const opts = rx.opts[0] ?? [3, 8];
+      const setsCount = opts[0];
+      const variations = slot.variations ?? EXERCISE_VARIATIONS[slot.lift] ?? [];
+
+      const newEntry: ExerciseLog = {
+        slotId: slot.id,
+        zone,
+        variant: 0,
+        rxSnapshot: rx,
+        variation: variations[0],
+        sets: Array.from({ length: setsCount }, () => ({
+          type: 'work',
+          done: false,
+        })),
+      };
+      return { ...s, entries: [...s.entries, newEntry] };
+    });
+    setIsAddModalOpen(false);
+  };
+
+  // Add Custom Exercise
+  const handleAddCustomExercise = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = customExerciseName.trim();
+    if (!name) return;
+
+    const setsCount = Math.max(1, parseInt(customExerciseSets, 10) || 3);
+    const repsCount = Math.max(1, parseInt(customExerciseReps, 10) || 10);
+
+    updateSession((s) => {
+      const uniqueId = `adhoc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const zone = s.entries[0]?.zone ?? 'vol';
+      const newEntry: ExerciseLog = {
+        slotId: uniqueId,
+        zone,
+        variant: 0,
+        customName: name,
+        rxSnapshot: {
+          opts: [[setsCount, repsCount]],
+          rpe: [7, 9],
+        },
+        sets: Array.from({ length: setsCount }, () => ({
+          type: 'work',
+          done: false,
+        })),
+      };
+      return { ...s, entries: [...s.entries, newEntry] };
+    });
+
+    setCustomExerciseName('');
+    setIsAddModalOpen(false);
+  };
+
   if (!program || !settings || !activeSession) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-neutral-400 font-mono">
@@ -92,6 +228,36 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
   const formattedDate = format(parseISO(activeSession.date), 'EEEE, d MMMM yyyy', {
     locale: ru,
   });
+
+  // Cardio state derivation
+  const currentCardio = activeSession.cardio ?? {
+    kind: 'treadmill_walk',
+    minutes: dayInfo?.cardio?.minutes ?? 20,
+    done: activeSession.cardioDone ?? false,
+  };
+  const cardioKind = currentCardio.kind || 'treadmill_walk';
+  const cardioMinutes = currentCardio.minutes ?? 20;
+  const cardioCalories = calculateCardioCalories(cardioKind, cardioMinutes, userWeight);
+  const cardioDone = activeSession.cardioDone ?? currentCardio.done ?? false;
+  const cardioMet = getCardioMet(cardioKind);
+
+  const handleUpdateCardio = (patch: { kind?: string; minutes?: number; done?: boolean }) => {
+    const nextKind = patch.kind ?? cardioKind;
+    const nextMinutes = patch.minutes !== undefined ? Math.max(0, patch.minutes) : cardioMinutes;
+    const nextDone = patch.done !== undefined ? patch.done : cardioDone;
+    const nextCalories = calculateCardioCalories(nextKind, nextMinutes, userWeight);
+
+    updateSession((s) => ({
+      ...s,
+      cardioDone: nextDone,
+      cardio: {
+        kind: nextKind,
+        minutes: nextMinutes,
+        calories: nextCalories,
+        done: nextDone,
+      },
+    }));
+  };
 
   return (
     <div className="pb-36 max-w-2xl mx-auto px-2.5 sm:px-4 pt-3">
@@ -127,10 +293,23 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight font-mono">
             {dayInfo?.title ?? 'Тренировка'}
           </h1>
+
+          {/* Toggle Day Customization Mode */}
+          <button
+            onClick={() => setIsEditingDay(!isEditingDay)}
+            className={`px-3 py-1.5 text-xs font-mono font-black uppercase tracking-wider rounded-none border transition-all flex items-center gap-1.5 ${
+              isEditingDay
+                ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.5)]'
+                : 'bg-neutral-950 text-yellow-400 border-yellow-500/50 hover:border-yellow-400'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>{isEditingDay ? 'Готово' : 'Настроить день'}</span>
+          </button>
         </div>
 
         {/* Bad Day Toggle */}
@@ -155,37 +334,65 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
             </span>
           )}
         </div>
-
-        {/* Cardio Block if configured */}
-        {dayInfo?.cardio && (
-          <div className="mt-3 pt-3 border-t border-yellow-500/20 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-neutral-200 font-mono">
-              <Flame className="w-4 h-4 text-yellow-400" />
-              <span>
-                Кардио: {dayInfo.cardio.minutes} мин ({dayInfo.cardio.kind})
-              </span>
-            </div>
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-mono font-bold text-yellow-400">
-              <input
-                type="checkbox"
-                checked={activeSession.cardioDone ?? false}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  updateSession((s) => ({ ...s, cardioDone: checked }));
-                }}
-                className="w-4 h-4 rounded-none text-yellow-400 bg-black border border-yellow-400 focus:ring-0"
-              />
-              <span>Выполнено</span>
-            </label>
-          </div>
-        )}
       </div>
+
+      {/* Day Edit Mode Banner */}
+      {isEditingDay && (
+        <div className="mb-4 p-3 bg-neutral-950 border-2 border-yellow-400 rounded-none shadow-[0_0_12px_rgba(250,204,21,0.2)]">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-mono font-black text-yellow-400 uppercase tracking-wider mb-1">
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>Режим настройки дня активен</span>
+              </div>
+              <p className="text-[11px] font-mono text-neutral-300">
+                Меняйте порядок упражнений (▲ ▼), удаляйте или добавляйте новые (пресс, икры, экстензия).
+                Изменения сохраняются <strong className="text-white">только для этого дня</strong>.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-3 py-1.5 bg-yellow-400 text-black font-mono font-black text-xs uppercase tracking-wider rounded-none shrink-0 border border-yellow-400 hover:bg-yellow-300 active:scale-95 flex items-center gap-1"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Добавить</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Exercises Accordion */}
       <div className="space-y-4">
         {activeSession.entries.map((entry, entryIndex) => {
-          const slot = program.slots.find((s) => s.id === entry.slotId);
-          if (!slot) return null;
+          // Resolve base slot or build fallback for ad-hoc exercises
+          const baseSlot = program.slots.find((s) => s.id === entry.slotId);
+          const isAdHoc = !baseSlot || entry.slotId.startsWith('adhoc-');
+
+          const slot: Slot = baseSlot ?? {
+            id: entry.slotId,
+            lift: entry.customName ? `adhoc_${entry.slotId}` : 'adhoc',
+            name: entry.customName || 'Упражнение',
+            day: activeSession.day,
+            kind: 'isolation',
+            inc: 2.5,
+            muscles: {},
+            rx: {
+              vol: entry.rxSnapshot,
+              mid: entry.rxSnapshot,
+              str: entry.rxSnapshot,
+            },
+            variations: [],
+          };
+
+          // Available equipment/analog variations
+          const availableVariations: string[] =
+            slot.variations && slot.variations.length > 0
+              ? slot.variations
+              : slot.lift && EXERCISE_VARIATIONS[slot.lift]
+              ? EXERCISE_VARIATIONS[slot.lift]
+              : [];
+
+          const currentVariation = entry.variation || availableVariations[0];
 
           const isCollapsed = collapsedSlots[slot.id] ?? false;
           const rx = entry.rxSnapshot;
@@ -202,7 +409,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
           // Compute suggestion
           const suggestion =
-            refE1rm > 0
+            !isAdHoc && refE1rm > 0
               ? suggest(slot, entry.zone, currentVariantIndex, rx, refE1rm, settings)
               : null;
 
@@ -287,13 +494,48 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
           return (
             <div
-              key={slot.id}
+              key={`${slot.id}-${entryIndex}`}
               className={`border-2 rounded-none bg-black transition-colors ${
                 entry.skipped
                   ? 'border-neutral-800 opacity-50'
                   : 'border-yellow-500/40 hover:border-yellow-400'
               }`}
             >
+              {/* Day Edit Mode Controls Header */}
+              {isEditingDay && (
+                <div className="bg-neutral-950 px-3 py-1.5 border-b border-yellow-500/40 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-black bg-yellow-400 px-1.5 py-0.2 uppercase">
+                      № {entryIndex + 1}
+                    </span>
+                    <button
+                      onClick={() => handleMoveEntry(entryIndex, 'up')}
+                      disabled={entryIndex === 0}
+                      className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
+                      title="Переместить выше"
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleMoveEntry(entryIndex, 'down')}
+                      disabled={entryIndex === activeSession.entries.length - 1}
+                      className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
+                      title="Переместить ниже"
+                    >
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => handleDeleteEntry(entryIndex, slot.name)}
+                    className="text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1 px-2 py-0.5 border border-red-500/40 bg-black"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Удалить</span>
+                  </button>
+                </div>
+              )}
+
               {/* Exercise Header */}
               <div className="p-3.5 flex items-start justify-between gap-2">
                 <div
@@ -301,7 +543,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                   onClick={() => toggleSlotCollapse(slot.id)}
                 >
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="font-black text-base sm:text-lg text-white uppercase tracking-tight">
+                    <span className="font-black text-base sm:text-lg text-white uppercase tracking-tight font-mono">
                       {slot.name}
                     </span>
                     {slot.kind === 'main' && (
@@ -317,6 +559,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     {slot.optional && (
                       <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 border border-yellow-500/50 text-yellow-400">
                         Опция
+                      </span>
+                    )}
+                    {isAdHoc && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 bg-neutral-900 border border-yellow-500/60 text-yellow-400">
+                        Спец
                       </span>
                     )}
                     {entry.skipped && (
@@ -345,6 +592,36 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                       </span>
                     )}
                   </div>
+
+                  {/* Exercise Analog / Equipment Variation Selector */}
+                  {availableVariations.length > 0 && (
+                    <div
+                      className="mt-2 flex items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] font-mono uppercase font-black text-yellow-400 tracking-wider">
+                        Аналог:
+                      </span>
+                      <select
+                        value={currentVariation}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateSession((s) => {
+                            const newEntries = [...s.entries];
+                            newEntries[entryIndex] = { ...newEntries[entryIndex], variation: val };
+                            return { ...s, entries: newEntries };
+                          });
+                        }}
+                        className="bg-neutral-950 text-yellow-400 border border-yellow-500/50 hover:border-yellow-400 text-xs font-mono font-bold px-2 py-1 rounded-none focus:outline-none focus:ring-1 focus:ring-yellow-400 cursor-pointer"
+                      >
+                        {availableVariations.map((v) => (
+                          <option key={v} value={v} className="bg-neutral-900 text-white font-mono">
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -404,7 +681,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                   )}
 
                   {/* Suggestion & Fast Action Banner */}
-                  {slot.kind !== 'warmup' && (
+                  {slot.kind !== 'warmup' && !isAdHoc && (
                     <div
                       className={`mb-4 p-3 rounded-none border ${
                         isNextSession
@@ -449,7 +726,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           )}
                         </div>
 
-                        {/* Fast Buttons */}
+                        {/* Fast Action Buttons */}
                         <div className="flex items-center gap-1.5 shrink-0 mt-1 sm:mt-0">
                           {suggestion && (
                             <button
@@ -525,7 +802,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     </div>
                   )}
 
-                  {/* Exercise RPE Chips (Strict Rectangles) */}
+                  {/* Exercise RPE Chips */}
                   <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
                     <span className="text-[11px] font-mono font-bold text-yellow-400 uppercase tracking-wider shrink-0">
                       RPE:
@@ -559,7 +836,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     </div>
                   </div>
 
-                  {/* Sets Table - Mobile Optimized with >= 46px touch targets */}
+                  {/* Sets Table - Mobile Optimized with >= 48px touch targets */}
                   <div className="space-y-1.5">
                     <div className="grid grid-cols-12 gap-1.5 text-[10px] font-mono font-black text-neutral-400 px-1 uppercase tracking-widest">
                       <div className="col-span-2 text-center">№ / ТИП</div>
@@ -611,7 +888,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                             </button>
                           </div>
 
-                          {/* Weight input - 48px height, strict corners, bright yellow placeholder */}
+                          {/* Weight input - 48px height, strict corners */}
                           <div className="col-span-4">
                             <input
                               type="number"
@@ -791,6 +1068,152 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
         })}
       </div>
 
+      {/* Quick Button to Add Exercise */}
+      <div className="mt-4 flex gap-2">
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex-1 py-3 bg-neutral-950 hover:bg-neutral-900 text-yellow-400 font-mono font-bold text-xs uppercase tracking-wider rounded-none border border-yellow-500/40 hover:border-yellow-400 transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <span>+ Добавить упражнение в этот день</span>
+        </button>
+      </div>
+
+      {/* ======================================================== */}
+      {/* CARDIO PANEL AT THE END OF THE WORKOUT                    */}
+      {/* ======================================================== */}
+      <div className="mt-6 bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_15px_rgba(250,204,21,0.2)]">
+        <div className="flex items-center justify-between pb-3 border-b border-yellow-500/30 mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-yellow-400 text-black flex items-center justify-center font-black">
+              <Flame className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-mono font-black text-white uppercase tracking-tight">
+                КАРДИОСЕССИЯ
+              </h2>
+              <p className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest">
+                В конце тренировки · Авторасчёт калорий
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => handleUpdateCardio({ done: !cardioDone })}
+            className={`px-3 py-1.5 font-mono text-xs font-black uppercase tracking-wider rounded-none border transition-all flex items-center gap-1.5 ${
+              cardioDone
+                ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.5)]'
+                : 'bg-neutral-950 text-neutral-400 border-neutral-700 hover:text-white hover:border-yellow-400'
+            }`}
+          >
+            <Check className={`w-4 h-4 ${cardioDone ? 'stroke-[3.5]' : 'stroke-2'}`} />
+            <span>{cardioDone ? 'Выполнено' : 'Отметить'}</span>
+          </button>
+        </div>
+
+        {/* Activity Kind Selector */}
+        <div className="mb-4">
+          <label className="block text-[11px] font-mono font-bold text-yellow-400 uppercase mb-2 tracking-wider">
+            Вид нагрузки:
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {CARDIO_TYPES.map((type) => {
+              const isSelected = cardioKind === type.id;
+              return (
+                <button
+                  key={type.id}
+                  onClick={() => handleUpdateCardio({ kind: type.id })}
+                  className={`p-2.5 text-left border rounded-none font-mono text-xs transition-all flex items-center justify-between ${
+                    isSelected
+                      ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.3)]'
+                      : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                  }`}
+                >
+                  <span className="truncate pr-1">{type.name}</span>
+                  <span
+                    className={`text-[9px] uppercase font-mono px-1 py-0.2 shrink-0 ${
+                      isSelected ? 'bg-black text-yellow-400 font-bold' : 'text-neutral-500'
+                    }`}
+                  >
+                    M:{type.met}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Duration Inputs and Presets */}
+        <div className="mb-4">
+          <label className="block text-[11px] font-mono font-bold text-yellow-400 uppercase mb-2 tracking-wider">
+            Пройденное время (минуты):
+          </label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min="0"
+                max="300"
+                inputMode="numeric"
+                value={cardioMinutes}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  handleUpdateCardio({ minutes: isNaN(val) ? 0 : val });
+                }}
+                className="w-24 h-12 px-3 text-center bg-black border-2 border-yellow-400 font-mono font-black text-lg text-white rounded-none focus:outline-none"
+              />
+              <span className="font-mono text-xs text-neutral-400 uppercase font-bold">мин</span>
+            </div>
+
+            {/* Fast preset buttons */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {[5, 10, 15, 20, 30].map((inc) => (
+                <button
+                  key={inc}
+                  onClick={() => handleUpdateCardio({ minutes: cardioMinutes + inc })}
+                  className="h-10 px-2.5 bg-neutral-950 hover:bg-neutral-900 text-yellow-400 border border-yellow-500/40 text-xs font-mono font-bold rounded-none active:scale-95 transition-all"
+                >
+                  +{inc}
+                </button>
+              ))}
+              <button
+                onClick={() => handleUpdateCardio({ minutes: 0 })}
+                className="h-10 px-2 bg-neutral-950 hover:bg-neutral-900 text-neutral-500 hover:text-neutral-300 border border-neutral-800 text-xs font-mono rounded-none"
+                title="Сбросить"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Burned Calories Display */}
+        <div className="p-3 bg-neutral-950 border border-yellow-500/40 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest">
+              Расчёт энергозатрат:
+            </div>
+            <div className="text-xl sm:text-2xl font-mono font-black text-yellow-400">
+              ~{cardioCalories} <span className="text-sm font-bold text-white">ккал</span>
+            </div>
+            <div className="text-[10px] font-mono text-neutral-400 mt-0.5">
+              MET: {cardioMet} · Вес атлета: {userWeight} кг · {cardioMinutes} мин
+            </div>
+          </div>
+
+          <button
+            onClick={() => handleUpdateCardio({ done: !cardioDone })}
+            className={`px-4 py-2 text-xs font-mono font-black uppercase rounded-none border transition-all ${
+              cardioDone
+                ? 'bg-yellow-400 text-black border-yellow-400'
+                : 'bg-black text-yellow-400 border-yellow-400 hover:bg-yellow-400 hover:text-black'
+            }`}
+          >
+            {cardioDone ? '✓ Сохранено в сессию' : 'Зафиксировать'}
+          </button>
+        </div>
+      </div>
+
       {/* General Note & Finish Button */}
       <div className="mt-5 bg-black border-2 border-yellow-400 rounded-none p-4 shadow">
         <label className="block text-xs font-mono font-black text-yellow-400 mb-2 uppercase tracking-widest">
@@ -822,6 +1245,179 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
       {/* Floating Rest Timer */}
       <RestTimer />
+
+      {/* ======================================================== */}
+      {/* ADD EXERCISE MODAL (TEMPLATES / CATALOG / CUSTOM)         */}
+      {/* ======================================================== */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-end sm:justify-center p-0 sm:p-4">
+          <div className="bg-black border-2 border-yellow-400 w-full max-w-xl mx-auto max-h-[90vh] flex flex-col shadow-[0_0_25px_rgba(250,204,21,0.3)]">
+            {/* Modal Header */}
+            <div className="p-3.5 border-b-2 border-yellow-400 flex items-center justify-between bg-neutral-950">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5 text-yellow-400 stroke-[3]" />
+                <span className="font-mono font-black text-white uppercase tracking-wider text-sm sm:text-base">
+                  Добавить упражнение в этот день
+                </span>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="w-8 h-8 border border-neutral-700 hover:border-yellow-400 text-neutral-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b border-yellow-500/30 bg-neutral-950">
+              <button
+                onClick={() => setAddModalTab('templates')}
+                className={`flex-1 py-2.5 text-xs font-mono font-black uppercase border-b-2 transition-all ${
+                  addModalTab === 'templates'
+                    ? 'border-yellow-400 text-yellow-400 bg-black'
+                    : 'border-transparent text-neutral-400 hover:text-white'
+                }`}
+              >
+                Шаблоны (Пресс/Икры/Экстензия)
+              </button>
+              <button
+                onClick={() => setAddModalTab('catalog')}
+                className={`flex-1 py-2.5 text-xs font-mono font-black uppercase border-b-2 transition-all ${
+                  addModalTab === 'catalog'
+                    ? 'border-yellow-400 text-yellow-400 bg-black'
+                    : 'border-transparent text-neutral-400 hover:text-white'
+                }`}
+              >
+                Из программы
+              </button>
+              <button
+                onClick={() => setAddModalTab('custom')}
+                className={`flex-1 py-2.5 text-xs font-mono font-black uppercase border-b-2 transition-all ${
+                  addModalTab === 'custom'
+                    ? 'border-yellow-400 text-yellow-400 bg-black'
+                    : 'border-transparent text-neutral-400 hover:text-white'
+                }`}
+              >
+                Своё
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="p-4 overflow-y-auto flex-1 space-y-3">
+              {/* TAB 1: QUICK TEMPLATES */}
+              {addModalTab === 'templates' && (
+                <div className="space-y-2">
+                  <p className="text-xs font-mono text-neutral-400 mb-2">
+                    Популярные вспомогательные упражнения. Нажмите для добавления:
+                  </p>
+                  {QUICK_ADD_TEMPLATES.map((tmpl) => (
+                    <button
+                      key={tmpl.name}
+                      onClick={() => handleAddFromTemplate(tmpl)}
+                      className="w-full p-3 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 hover:border-yellow-400 text-left rounded-none transition-all flex items-center justify-between group"
+                    >
+                      <div>
+                        <div className="font-mono font-black text-white text-sm group-hover:text-yellow-400 transition-colors uppercase">
+                          {tmpl.name}
+                        </div>
+                        <div className="text-[11px] font-mono text-neutral-400">
+                          {tmpl.defaultSets} подхода × {tmpl.defaultReps} повт.
+                        </div>
+                      </div>
+                      <Plus className="w-5 h-5 text-neutral-600 group-hover:text-yellow-400 transition-colors" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* TAB 2: PROGRAM CATALOG */}
+              {addModalTab === 'catalog' && (
+                <div className="space-y-2">
+                  <p className="text-xs font-mono text-neutral-400 mb-2">
+                    Выберите любое упражнение из основной базы программы:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {program.slots.map((slot) => (
+                      <button
+                        key={slot.id}
+                        onClick={() => handleAddFromCatalog(slot)}
+                        className="p-2.5 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 hover:border-yellow-400 text-left rounded-none transition-all flex items-center justify-between group"
+                      >
+                        <div className="truncate pr-2">
+                          <div className="font-mono font-bold text-white text-xs group-hover:text-yellow-400 transition-colors uppercase truncate">
+                            {slot.name}
+                          </div>
+                          <div className="text-[10px] font-mono text-neutral-500 uppercase">
+                            День: {program.days[slot.day]?.title ?? slot.day}
+                          </div>
+                        </div>
+                        <Plus className="w-4 h-4 text-neutral-600 group-hover:text-yellow-400 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: CUSTOM EXERCISE */}
+              {addModalTab === 'custom' && (
+                <form onSubmit={handleAddCustomExercise} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-yellow-400 uppercase mb-1">
+                      Название упражнения
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Например: Подъём ног в висе, Армейский жим..."
+                      value={customExerciseName}
+                      onChange={(e) => setCustomExerciseName(e.target.value)}
+                      required
+                      autoFocus
+                      className="w-full h-11 px-3 bg-neutral-950 border border-neutral-700 text-white font-mono text-sm rounded-none focus:outline-none focus:border-yellow-400"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-mono font-bold text-neutral-400 uppercase mb-1">
+                        Подходов
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={customExerciseSets}
+                        onChange={(e) => setCustomExerciseSets(e.target.value)}
+                        className="w-full h-11 px-3 text-center bg-neutral-950 border border-neutral-700 text-white font-mono font-black text-sm rounded-none focus:outline-none focus:border-yellow-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-bold text-neutral-400 uppercase mb-1">
+                        Повторений в подходе
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={customExerciseReps}
+                        onChange={(e) => setCustomExerciseReps(e.target.value)}
+                        className="w-full h-11 px-3 text-center bg-neutral-950 border border-neutral-700 text-white font-mono font-black text-sm rounded-none focus:outline-none focus:border-yellow-400"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-mono font-black uppercase tracking-wider text-xs rounded-none border border-yellow-400 flex items-center justify-center gap-1.5 transition-all shadow"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>Добавить в эту тренировку</span>
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

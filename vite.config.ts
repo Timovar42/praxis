@@ -14,8 +14,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
       manifest: {
-        name: 'WaveLog PRO',
-        short_name: 'WaveLog',
+        name: 'Proxis',
+        short_name: 'Proxis',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',

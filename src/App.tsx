@@ -5,7 +5,7 @@ import { WorkoutScreen } from './features/workout/WorkoutScreen';
 import { PlanScreen } from './features/plan/PlanScreen';
 import { ProgressScreen } from './features/progress/ProgressScreen';
 import { ProgramEditorScreen } from './features/program-editor/ProgramEditorScreen';
-import { SettingsScreen } from './features/settings/SettingsScreen';
+import { ProfileScreen } from './features/profile/ProfileScreen';
 import { format } from 'date-fns';
 import {
   CalendarDays,
@@ -13,10 +13,10 @@ import {
   Calendar,
   TrendingUp,
   Sliders,
-  Settings as SettingsIcon,
+  User,
 } from 'lucide-react';
 
-type Tab = 'today' | 'workout' | 'plan' | 'progress' | 'program' | 'settings';
+type Tab = 'today' | 'workout' | 'plan' | 'progress' | 'program' | 'profile';
 
 export const App: React.FC = () => {
   const { init, initialized } = useAppStore();
@@ -34,7 +34,7 @@ export const App: React.FC = () => {
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-neutral-400">
         <div className="w-12 h-12 border-2 border-neutral-800 border-t-yellow-400 rounded-none animate-spin mb-4" />
         <p className="font-mono text-xs uppercase tracking-widest text-yellow-400 font-bold">
-          Инициализация WaveLog...
+          Инициализация Proxis...
         </p>
       </div>
     );
@@ -51,7 +51,7 @@ export const App: React.FC = () => {
     { id: 'plan', label: 'План', icon: CalendarDays },
     { id: 'progress', label: 'Прогресс', icon: TrendingUp },
     { id: 'program', label: 'Схема', icon: Sliders },
-    { id: 'settings', label: 'Опции', icon: SettingsIcon },
+    { id: 'profile', label: 'Профиль', icon: User },
   ];
 
   return (
@@ -65,7 +65,7 @@ export const App: React.FC = () => {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="font-black text-lg tracking-wider uppercase font-mono text-white">
-                WAVELOG
+                PROXIS
               </span>
               <span className="text-[10px] text-yellow-400 font-mono font-bold uppercase tracking-widest border border-yellow-400/40 px-1 py-0.2">
                 PRO 1.0
@@ -92,7 +92,7 @@ export const App: React.FC = () => {
         )}
         {activeTab === 'progress' && <ProgressScreen />}
         {activeTab === 'program' && <ProgramEditorScreen />}
-        {activeTab === 'settings' && <SettingsScreen />}
+        {activeTab === 'profile' && <ProfileScreen />}
       </main>
 
       {/* Bottom Navigation Bar (Strict Brutalist Style, Large touch targets) */}

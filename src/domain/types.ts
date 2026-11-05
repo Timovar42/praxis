@@ -22,6 +22,7 @@ export interface Slot {
   countsInVolume?: boolean; // default true
   muscles: Partial<Record<Muscle, number>>; // 1 = direct, 0.5 = indirect
   rx: Record<Zone, Rx>;
+  variations?: string[]; // available equipment/analog alternatives
 }
 
 export interface Program {
@@ -51,6 +52,15 @@ export interface ExerciseLog {
   rpe?: number; // exercise-level RPE override
   note?: string;
   skipped?: boolean;
+  variation?: string; // selected analog (e.g. "в гакке", "со штангой")
+  customName?: string; // custom exercise name if added ad-hoc
+}
+
+export interface CardioSession {
+  kind: string; // e.g. 'treadmill_walk', 'treadmill_run', etc.
+  minutes: number;
+  calories?: number;
+  done: boolean;
 }
 
 export interface Session {
@@ -61,14 +71,23 @@ export interface Session {
   week: number; // 1-based
   entries: ExerciseLog[];
   cardioDone?: boolean;
+  cardio?: CardioSession;
   badDay?: boolean;
   note?: string;
+}
+
+export interface UserProfile {
+  gender: 'male' | 'female';
+  age: number; // default: 18
+  weight: number; // default: 92 (kg)
+  bodyFatPct: number; // default: 27 (%)
 }
 
 export interface Settings {
   rpeMode: 'low' | 'mid' | 'high';
   formula: 'epley' | 'brzycki';
   units: 'kg';
+  profile?: UserProfile;
 }
 
 export interface Suggestion {

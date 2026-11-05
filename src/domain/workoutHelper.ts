@@ -85,6 +85,7 @@ export function getOrCreateSessionForDate(
   const zone = rot.zone;
 
   const slotsForDay = program.slots.filter((s) => s.day === dayKey);
+  const dayInfo = program.days[dayKey];
 
   return {
     id: `session-${dateStr}`,
@@ -92,6 +93,15 @@ export function getOrCreateSessionForDate(
     day: dayKey,
     cycle: rot.cycle,
     week: rot.week,
+    cardioDone: false,
+    cardio: dayInfo?.cardio
+      ? {
+          kind: 'treadmill_walk',
+          minutes: dayInfo.cardio.minutes,
+          calories: Math.round(4.3 * 92 * (dayInfo.cardio.minutes / 60)),
+          done: false,
+        }
+      : undefined,
     entries: slotsForDay.map((slot) => {
       const rx = slot.rx[zone];
       const defaultVariant = 0;
@@ -103,6 +113,7 @@ export function getOrCreateSessionForDate(
         zone,
         variant: defaultVariant,
         rxSnapshot: rx,
+        variation: slot.variations?.[0],
         sets: Array.from({ length: setsCount }, () => ({
           type: 'work',
           done: false,
