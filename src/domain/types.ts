@@ -3,6 +3,7 @@ export type DayKey = 'mon' | 'tue' | 'wed' | 'fri' | 'sat';
 export type Kind = 'main' | 'compound' | 'isolation' | 'warmup';
 export type SetType = 'work' | 'warmup' | 'attack' | 'drop';
 export type Muscle = 'quads' | 'hams' | 'glutes' | 'chest' | 'back' | 'traps' | 'fdelts' | 'sdelts' | 'rdelts' | 'biceps' | 'triceps' | 'calves' | 'abs';
+export type PeriodizationType = 'wave' | 'linear' | 'block' | 'fixed';
 
 // opts: [[sets, reps], ...], reps can be number or [min, max]
 export interface Rx {
@@ -28,6 +29,8 @@ export interface Slot {
 export interface Program {
   id: string;
   name: string;
+  periodization?: PeriodizationType;
+  description?: string;
   cycleStart: string; // ISO date of Monday of week 1
   cycleWeeks: number; // 3
   rotation: Record<DayKey, Zone[]>; // zone per cycle week

@@ -4,7 +4,6 @@ import { TodayScreen } from './features/today/TodayScreen';
 import { WorkoutScreen } from './features/workout/WorkoutScreen';
 import { PlanScreen } from './features/plan/PlanScreen';
 import { ProgressScreen } from './features/progress/ProgressScreen';
-import { ProgramEditorScreen } from './features/program-editor/ProgramEditorScreen';
 import { ProfileScreen } from './features/profile/ProfileScreen';
 import { OnboardingScreen } from './features/auth/OnboardingScreen';
 import { GoogleAuthModal } from './features/auth/GoogleAuthModal';
@@ -14,17 +13,19 @@ import {
   Dumbbell,
   Calendar,
   TrendingUp,
-  Sliders,
   User,
+  Utensils,
+  X,
 } from 'lucide-react';
 
-type Tab = 'today' | 'workout' | 'plan' | 'progress' | 'program' | 'profile';
+type Tab = 'today' | 'workout' | 'plan' | 'profile' | 'progress' | 'nutrition';
 
 export const App: React.FC = () => {
   const { init, initialized, currentUser, onboardingRequired, forceInit } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showBypassNotice, setShowBypassNotice] = useState<boolean>(false);
+  const [showNutritionNotice, setShowNutritionNotice] = useState<boolean>(false);
   const [workoutDate, setWorkoutDate] = useState<string>(() =>
     format(new Date(), 'yyyy-MM-dd')
   );
@@ -74,9 +75,9 @@ export const App: React.FC = () => {
     { id: 'today', label: 'Сегодня', icon: Calendar },
     { id: 'workout', label: 'Зал', icon: Dumbbell },
     { id: 'plan', label: 'План', icon: CalendarDays },
-    { id: 'progress', label: 'Прогресс', icon: TrendingUp },
-    { id: 'program', label: 'Схема', icon: Sliders },
     { id: 'profile', label: 'Профиль', icon: User },
+    { id: 'progress', label: 'Прогресс', icon: TrendingUp },
+    { id: 'nutrition', label: 'Питание', icon: Utensils },
   ];
 
   return (
@@ -142,9 +143,8 @@ export const App: React.FC = () => {
         {activeTab === 'plan' && (
           <PlanScreen onSelectDate={handleStartWorkout} />
         )}
-        {activeTab === 'progress' && <ProgressScreen />}
-        {activeTab === 'program' && <ProgramEditorScreen />}
         {activeTab === 'profile' && <ProfileScreen />}
+        {activeTab === 'progress' && <ProgressScreen />}
       </main>
 
       {/* Bottom Navigation Bar (Strict Brutalist Style, Large touch targets) */}
@@ -153,18 +153,44 @@ export const App: React.FC = () => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
+            const isProfile = item.id === 'profile';
+
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (item.id === 'nutrition') {
+                    setShowNutritionNotice(true);
+                    return;
+                  }
+                  setActiveTab(item.id);
+                }}
                 className={`flex-1 min-h-[52px] flex flex-col items-center justify-center py-1.5 px-0.5 rounded-none transition-colors border-t-2 -mt-[2px] ${
                   isActive
                     ? 'border-yellow-400 bg-neutral-950 text-yellow-400 font-black'
+                    : isProfile
+                    ? 'border-transparent text-yellow-300 hover:text-yellow-200 hover:bg-neutral-950'
                     : 'border-transparent text-neutral-400 hover:text-white hover:bg-neutral-950'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5] text-yellow-400' : 'stroke-2'}`} />
-                <span className="text-[10px] mt-1 font-mono uppercase tracking-wider font-bold truncate max-w-[56px]">
+                <Icon
+                  className={`w-5 h-5 ${
+                    isActive
+                      ? 'stroke-[2.5] text-yellow-400'
+                      : isProfile
+                      ? 'stroke-[2.4] text-yellow-300 drop-shadow-[0_0_6px_rgba(250,204,21,0.5)]'
+                      : 'stroke-2'
+                  }`}
+                />
+                <span
+                  className={`text-[10px] mt-1 font-mono uppercase tracking-wider truncate max-w-[56px] ${
+                    isProfile
+                      ? 'font-black text-yellow-300 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] tracking-widest'
+                      : isActive
+                      ? 'font-black'
+                      : 'font-bold'
+                  }`}
+                >
                   {item.label}
                 </span>
               </button>
@@ -172,6 +198,58 @@ export const App: React.FC = () => {
           })}
         </div>
       </nav>
+
+      {/* Nutrition (Dummy) Feature Notice Modal */}
+      {showNutritionNotice && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-black border-2 border-yellow-400 p-5 max-w-sm w-full shadow-[0_0_25px_rgba(250,204,21,0.3)]">
+            <div className="flex items-center justify-between border-b border-yellow-500/30 pb-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-yellow-400 text-black flex items-center justify-center font-black">
+                  <Utensils className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <span className="font-mono font-black text-white uppercase text-sm tracking-wider block">
+                    ПИТАНИЕ (КБЖУ)
+                  </span>
+                  <span className="text-[10px] font-mono text-yellow-400 uppercase">
+                    Скоро в Praxis
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowNutritionNotice(false)}
+                className="w-7 h-7 border border-neutral-700 hover:border-yellow-400 text-neutral-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-4 text-xs font-mono text-neutral-300 leading-relaxed">
+              <div className="inline-block px-2 py-0.5 bg-yellow-400 text-black font-black text-[10px] uppercase mb-1">
+                В РАЗРАБОТКЕ
+              </div>
+              <p>
+                Раздел «Питание» находится в стадии активной разработки. В следующих обновлениях:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-neutral-400 text-[11px]">
+                <li>Дневник калорий и макронутриентов (Белки, Жиры, Углеводы)</li>
+                <li>Автоматический расчёт суточной нормы под ваши параметры ({currentUser?.name || 'Атлет'})</li>
+                <li>Синхронизация с потраченными калориями из кардио-тренировок</li>
+                <li>Режимы: Набор сухой массы · Сушка · Поддержание</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={() => setShowNutritionNotice(false)}
+              className="w-full py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-mono text-xs font-black uppercase rounded-none transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
+            >
+              ПОНЯТНО
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Google & Multi-user Authentication Modal */}
       <GoogleAuthModal
         isOpen={showAuthModal}

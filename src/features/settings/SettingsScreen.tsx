@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { dexieRepo } from '../../repo/dexieRepo';
 import { seedProgram } from '../../data/seedProgram';
+import { ProgramEditorScreen } from '../program-editor/ProgramEditorScreen';
+import { PERIODIZATION_MODELS } from '../../domain/presets';
 import type { Settings } from '../../domain/types';
 import {
   Download,
@@ -11,12 +13,15 @@ import {
   Check,
   AlertTriangle,
   ShieldCheck,
+  Layers,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 export const SettingsScreen: React.FC = () => {
-  const { settings, saveSettings, saveProgram, refreshSessions } = useAppStore();
+  const { settings, program, saveSettings, saveProgram, refreshSessions } = useAppStore();
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showProgramEditor, setShowProgramEditor] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,16 +94,25 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  if (showProgramEditor) {
+    return (
+      <ProgramEditorScreen
+        onClose={() => setShowProgramEditor(false)}
+        onSaved={() => setShowProgramEditor(false)}
+      />
+    );
+  }
+
   return (
     <div className="pb-32 max-w-2xl mx-auto px-3 sm:px-4 pt-3">
       {/* Header */}
       <div className="mb-4 flex items-center justify-between border-b border-yellow-500/20 pb-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
-            Настройки
+          <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight font-mono">
+            Опции и настройки
           </h1>
           <p className="text-xs font-mono text-neutral-400 mt-0.5">
-            Параметры алгоритма и данные
+            Схема тренировок, периодизация и алгоритм
           </p>
         </div>
         {savedSuccess && (
@@ -110,6 +124,40 @@ export const SettingsScreen: React.FC = () => {
       </div>
 
       <div className="space-y-4">
+        {/* Training Program & Periodization Section (Moved to Settings) */}
+        <div className="bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_12px_rgba(250,204,21,0.15)]">
+          <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2">
+            <span className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Layers className="w-4 h-4 stroke-[2.5]" />
+              Схема и программа тренировок
+            </span>
+            <span className="text-[10px] font-mono text-neutral-400 uppercase">
+              {program?.slots.length || 0} упр.
+            </span>
+          </div>
+
+          <div className="bg-neutral-950 border border-neutral-800 p-3 mb-3">
+            <div className="text-sm font-mono font-black text-white uppercase mb-1">
+              {program?.name || 'Силовой цикл'}
+            </div>
+            <div className="text-[11px] font-mono text-yellow-400 flex items-center gap-2 mb-2">
+              <span>Периодизация: {PERIODIZATION_MODELS[program?.periodization || 'wave'].shortTitle}</span>
+              <span>· {program?.cycleWeeks || 3} нед. в цикле</span>
+            </div>
+            <p className="text-[10px] font-mono text-neutral-400 leading-snug">
+              {PERIODIZATION_MODELS[program?.periodization || 'wave'].tagline}
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowProgramEditor(true)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-yellow-400 hover:bg-yellow-300 text-black font-mono text-xs font-black uppercase rounded-none transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
+          >
+            <SlidersHorizontal className="w-4 h-4 stroke-[2.5]" />
+            <span>Настроить схему и выбрать пресет</span>
+          </button>
+        </div>
+
         {/* Progression Algorithm Settings */}
         <div className="bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_12px_rgba(250,204,21,0.15)]">
           <h2 className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest mb-3 flex items-center gap-2">
