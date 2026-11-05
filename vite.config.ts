@@ -20,14 +20,30 @@ export default defineConfig({
         clientsClaim: true,
       },
       manifest: {
-        name: 'Praxis',
+        name: 'Praxis — Силовой трекер',
         short_name: 'Praxis',
+        description: 'Офлайн-трекер силовых тренировок и волновой периодизации',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
-          { src: 'icons.svg', sizes: 'any', type: 'image/svg+xml' },
+          {
+            src: 'favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+          },
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
         ],
       },
     }),
