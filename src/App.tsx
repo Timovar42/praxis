@@ -6,6 +6,7 @@ import { PlanScreen } from './features/plan/PlanScreen';
 import { ProgressScreen } from './features/progress/ProgressScreen';
 import { ProfileScreen } from './features/profile/ProfileScreen';
 import { OnboardingScreen } from './features/auth/OnboardingScreen';
+import { AuthScreen } from './features/auth/AuthScreen';
 import { GoogleAuthModal } from './features/auth/GoogleAuthModal';
 import { format } from 'date-fns';
 import {
@@ -59,6 +60,11 @@ export const App: React.FC = () => {
         )}
       </div>
     );
+  }
+
+  // If not authenticated, require registration/login with email & password
+  if (!currentUser) {
+    return <AuthScreen />;
   }
 
   // If a new user signs up or lacks onboarding, force profile creation first

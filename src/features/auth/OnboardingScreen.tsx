@@ -94,7 +94,7 @@ export const OnboardingScreen: React.FC = () => {
             </div>
           </div>
           <span className="text-[9px] font-mono font-bold text-yellow-400 border border-yellow-400/40 px-1.5 py-0.5 uppercase shrink-0">
-            Google
+            {currentUser?.provider === 'google' ? 'Google' : 'Email'}
           </span>
         </div>
 

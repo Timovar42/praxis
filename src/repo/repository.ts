@@ -29,6 +29,7 @@ export interface Repository {
   // Users
   getUsers(): Promise<UserAccount[]>;
   getUser(id: string): Promise<UserAccount | null>;
+  getUserByEmail?(email: string): Promise<UserAccount | null>;
   saveUser(u: UserAccount): Promise<void>;
   deleteUser(id: string): Promise<void>;
 

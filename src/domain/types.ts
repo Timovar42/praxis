@@ -88,13 +88,16 @@ export interface UserProfile {
 }
 
 export interface UserAccount {
-  id: string; // unique ID e.g. "user_default" or google sub
+  id: string; // unique ID e.g. "user_..." or google sub
   email: string;
   name: string;
+  passwordHash?: string; // SHA-256 hash
+  salt?: string;
   picture?: string;
-  provider: 'google';
+  provider: 'email' | 'google' | 'local';
   createdAt: string;
   onboarded: boolean;
+  verified?: boolean;
 }
 
 export interface Settings {

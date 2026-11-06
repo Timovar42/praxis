@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store';
-import { X, LogIn, UserPlus, Check, ArrowRight } from 'lucide-react';
+import { X, LogIn, UserPlus, Check, ArrowRight, LogOut } from 'lucide-react';
 
 interface GoogleAuthModalProps {
   isOpen: boolean;
@@ -8,7 +8,7 @@ interface GoogleAuthModalProps {
 }
 
 export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, users, switchUser, loginWithGoogle, settings, saveSettings } = useAppStore();
+  const { currentUser, users, switchUser, loginWithGoogle, settings, saveSettings, logout } = useAppStore();
 
   const [googleEmail, setGoogleEmail] = useState('');
   const [athleteName, setAthleteName] = useState('');
@@ -236,6 +236,21 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({ isOpen, onClos
               </div>
             </div>
           )}
+
+          {/* Logout Action */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                onClose();
+              }}
+              className="w-full py-2.5 bg-neutral-950 hover:bg-neutral-900 text-red-400 border border-red-500/40 hover:border-red-400 font-mono text-xs font-bold uppercase transition-all flex items-center justify-center gap-2 active:scale-95"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Выйти из аккаунта</span>
+            </button>
+          </div>
 
           {/* Google OAuth Client ID Configuration (Expandable) */}
           <div className="border-t border-neutral-900 pt-3">

@@ -101,9 +101,9 @@ describe('equipmentAdapter', () => {
             variant: 0,
             rxSnapshot: { opts: [[3, 10]] },
             sets: [
-              { type: 'work', weight: 16, reps: 10, done: true },
-              { type: 'work', weight: 16, reps: 10, done: true },
-              { type: 'work', weight: 16, reps: 10, done: true },
+              { type: 'work', weight: 16, reps: 10, rpe: 8, done: true },
+              { type: 'work', weight: 16, reps: 10, rpe: 8, done: true },
+              { type: 'work', weight: 16, reps: 10, rpe: 8, done: true },
             ],
           },
         ],

@@ -17,12 +17,13 @@ import {
   Ruler,
   Percent,
   LogIn,
+  LogOut,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 
 export const ProfileScreen: React.FC = () => {
-  const { settings, sessions, program, saveSettings, currentUser, users, switchUser } = useAppStore();
+  const { settings, sessions, program, saveSettings, currentUser, users, switchUser, logout } = useAppStore();
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -201,13 +202,27 @@ export const ProfileScreen: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="flex items-center justify-center gap-2 px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-mono text-xs font-black uppercase rounded-none transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
-          >
-            <LogIn className="w-4 h-4 stroke-[2.5]" />
-            <span>Сменить / Войти</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-mono text-xs font-black uppercase rounded-none transition-all shadow-[0_0_10px_rgba(250,204,21,0.3)] active:scale-95"
+            >
+              <LogIn className="w-4 h-4 stroke-[2.5]" />
+              <span>Сменить</span>
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Выйти из текущего профиля на этом устройстве?')) {
+                  logout();
+                }
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-neutral-900 hover:bg-neutral-800 text-red-400 hover:text-red-300 font-mono text-xs font-bold uppercase rounded-none border border-red-500/40 hover:border-red-400 transition-all active:scale-95"
+              title="Выйти из аккаунта"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Выйти</span>
+            </button>
+          </div>
         </div>
 
         {/* Quick Switch between saved athletes */}

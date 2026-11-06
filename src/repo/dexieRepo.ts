@@ -7,11 +7,11 @@ const SCHEMA_VERSION = 1;
 
 export const DEFAULT_USER_ACCOUNT: UserAccount = {
   id: 'user_default',
-  name: 'Timovar42',
-  email: 'a77831818@gmail.com',
-  provider: 'google',
+  name: 'Атлет',
+  email: '',
+  provider: 'local',
   createdAt: '2026-11-02T00:00:00.000Z',
-  onboarded: true,
+  onboarded: false,
 };
 
 class PraxisDB extends Dexie {
@@ -117,6 +117,12 @@ export const dexieRepo: Repository = {
     return (await db.users.get(id)) ?? null;
   },
 
+  async getUserByEmail(email: string) {
+    const norm = email.trim().toLowerCase();
+    const all = await db.users.toArray();
+    return all.find((u) => (u.email || '').trim().toLowerCase() === norm) ?? null;
+  },
+
   async saveUser(u) {
     await db.users.put(u);
   },
@@ -210,13 +216,7 @@ export async function initRepo() {
     // Non-fatal fallback
   }
 
-  // 3. Ensure default user exists
-  const existingUser = await dexieRepo.getUser('user_default');
-  if (!existingUser) {
-    await dexieRepo.saveUser(DEFAULT_USER_ACCOUNT);
-  }
-
-  // 4. Ensure default program exists
+  // 3. Ensure baseline default program exists for cloning
   const existingProgram = await dexieRepo.getProgram('user_default');
   if (!existingProgram) {
     await dexieRepo.saveProgram(seedProgram, 'user_default');
