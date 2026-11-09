@@ -9,6 +9,7 @@ export interface SuggestContext {
   history: Session[];
   estimates: Record<Bin, Estimate>;
   family?: Family;
+  allEstimates?: Record<string, Record<Bin, Estimate>>;
   settings?: Partial<Settings>;
   selectedVariantId?: string;
   zone: Zone;
@@ -202,7 +203,18 @@ export function suggestV2(ctx: SuggestContext): SuggestionV2 {
   const targetReps = typeof repsRange === 'number' ? repsRange : repsRange[1];
 
   // 2. Canonical strength mu_canon and mode
-  const { e1rm: muCanon } = getCalibratedE1RM(targetReps, estimates);
+  let { e1rm: muCanon } = getCalibratedE1RM(targetReps, estimates);
+  if (muCanon === 0 && family.crossPrior && ctx.allEstimates) {
+    const parentFamEst = ctx.allEstimates[family.crossPrior.targetFamilyId];
+    if (parentFamEst && parentFamEst.all && parentFamEst.all.mu > 0) {
+      muCanon = parentFamEst.all.mu * family.crossPrior.ratio;
+      explain.push({
+        label: `Старт по приору (${family.crossPrior.targetFamilyId})`,
+        value: `${muCanon.toFixed(1)} кг (k=${family.crossPrior.ratio})`,
+      });
+    }
+  }
+
   const allEstimate = estimates.all || { p: 16, mu: muCanon };
   const sd = Math.sqrt(allEstimate.p || 16);
 

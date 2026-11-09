@@ -150,11 +150,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         settings: settings
           ? {
               ...settings,
+              engine: settings.engine || 'v2',
               profile: settings.profile
                 ? { ...fallbackProfile, ...settings.profile }
                 : fallbackProfile,
             }
-          : { rpeMode: 'mid', formula: 'epley', units: 'kg', profile: fallbackProfile },
+          : { rpeMode: 'mid', formula: 'epley', units: 'kg', engine: 'v2', profile: fallbackProfile },
         onboardingRequired: !activeUser.onboarded,
         initialized: true,
       });
@@ -336,12 +337,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         users: allUsers,
         program: program ?? (user.id === 'user_default' ? seedProgram : null),
         sessions: sessions ?? [],
-        settings: settings ?? {
-          rpeMode: 'mid',
-          formula: 'epley',
-          units: 'kg',
-          profile: DEFAULT_USER_PROFILE,
-        },
+        settings: settings
+          ? { ...settings, engine: settings.engine || 'v2' }
+          : {
+              rpeMode: 'mid',
+              formula: 'epley',
+              units: 'kg',
+              engine: 'v2',
+              profile: DEFAULT_USER_PROFILE,
+            },
         onboardingRequired: !user.onboarded,
       });
 
@@ -435,12 +439,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         users: updatedUsers,
         program: program ?? (updatedUser.id === 'user_default' ? seedProgram : null),
         sessions: sessions ?? [],
-        settings: settings ?? {
-          rpeMode: 'mid',
-          formula: 'epley',
-          units: 'kg',
-          profile: DEFAULT_USER_PROFILE,
-        },
+        settings: settings
+          ? { ...settings, engine: settings.engine || 'v2' }
+          : {
+              rpeMode: 'mid',
+              formula: 'epley',
+              units: 'kg',
+              engine: 'v2',
+              profile: DEFAULT_USER_PROFILE,
+            },
         onboardingRequired: !updatedUser.onboarded,
       });
 
@@ -487,12 +494,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         users: allUsers,
         program: program ?? (user.id === 'user_default' ? seedProgram : null),
         sessions: sessions ?? [],
-        settings: settings ?? {
-          rpeMode: 'mid',
-          formula: 'epley',
-          units: 'kg',
-          profile: DEFAULT_USER_PROFILE,
-        },
+        settings: settings
+          ? { ...settings, engine: settings.engine || 'v2' }
+          : {
+              rpeMode: 'mid',
+              formula: 'epley',
+              units: 'kg',
+              engine: 'v2',
+              profile: DEFAULT_USER_PROFILE,
+            },
         onboardingRequired: !user.onboarded,
       });
     } catch (err) {

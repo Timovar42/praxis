@@ -4,6 +4,7 @@ import { dexieRepo } from '../../repo/dexieRepo';
 import { seedProgram } from '../../data/seedProgram';
 import { ProgramEditorScreen } from '../program-editor/ProgramEditorScreen';
 import { CalibrationScreen } from '../calibration/CalibrationScreen';
+import { BacktestScreen } from '../backtest/BacktestScreen';
 import { PERIODIZATION_MODELS } from '../../domain/presets';
 import type { Settings } from '../../domain/types';
 import {
@@ -18,6 +19,7 @@ import {
   SlidersHorizontal,
   Flame,
   Zap,
+  Activity,
 } from 'lucide-react';
 
 export const SettingsScreen: React.FC = () => {
@@ -26,6 +28,7 @@ export const SettingsScreen: React.FC = () => {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showProgramEditor, setShowProgramEditor] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
+  const [showBacktest, setShowBacktest] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +38,10 @@ export const SettingsScreen: React.FC = () => {
 
   if (showCalibration) {
     return <CalibrationScreen onClose={() => setShowCalibration(false)} />;
+  }
+
+  if (showBacktest) {
+    return <BacktestScreen onBack={() => setShowBacktest(false)} />;
   }
 
   const handleUpdate = async (patch: Partial<Settings>) => {
@@ -168,18 +175,27 @@ export const SettingsScreen: React.FC = () => {
 
         {/* Progression Algorithm Settings */}
         <div className="bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_12px_rgba(250,204,21,0.15)]">
-          <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2">
+          <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2 flex-wrap gap-2">
             <h2 className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest flex items-center gap-2">
               <Sliders className="w-4 h-4 text-yellow-400" />
               <span>Движок подсказок и калибровка</span>
             </h2>
-            <button
-              onClick={() => setShowCalibration(true)}
-              className="px-2.5 py-1 bg-yellow-400 text-black font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1 hover:bg-yellow-300 transition-colors shadow-[0_0_8px_rgba(250,204,21,0.3)]"
-            >
-              <Zap className="w-3.5 h-3.5 fill-black" />
-              <span>Калибровка снарядов</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowBacktest(true)}
+                className="px-2.5 py-1 bg-black border border-yellow-400 text-yellow-400 font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1 hover:bg-yellow-400 hover:text-black transition-colors cursor-pointer"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Бэктест</span>
+              </button>
+              <button
+                onClick={() => setShowCalibration(true)}
+                className="px-2.5 py-1 bg-yellow-400 text-black font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1 hover:bg-yellow-300 transition-colors shadow-[0_0_8px_rgba(250,204,21,0.3)] cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 fill-black" />
+                <span>Калибровка</span>
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -204,8 +220,8 @@ export const SettingsScreen: React.FC = () => {
                   <button
                     key={eng.id}
                     onClick={() => handleUpdate({ engine: eng.id as any })}
-                    className={`p-2.5 rounded-none border text-left transition-all ${
-                      (settings.engine || 'v1') === eng.id
+                    className={`p-2.5 rounded-none border text-left transition-all cursor-pointer ${
+                      (settings.engine ?? 'v2') === eng.id
                         ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.4)]'
                         : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white hover:border-yellow-400/50'
                     }`}

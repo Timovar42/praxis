@@ -10,8 +10,9 @@ import {
 } from '../domain/engine2/estimate';
 import { DEFAULT_FAMILIES, DEFAULT_VARIANTS, learnK } from '../domain/engine2/families';
 import { migrateAllV1toV2 } from '../domain/engine2/migration';
-import { suggestV2 } from '../domain/engine2/suggest';
+import { suggestV2, roundToScheme } from '../domain/engine2/suggest';
 import { calculateSetTonnage, calculateEntryTonnage } from '../domain/engine2/tonnage';
+import { simulate, runBatchSimulation, backtestUserSessions } from '../domain/engine2/simulation';
 import type { Session, Program, Slot, ExerciseLog, Bin, Estimate, KPrior } from '../domain/types';
 
 describe('Engine v2: Оценка силы и модель данных', () => {
@@ -670,6 +671,197 @@ describe('Engine v2: Оценка силы и модель данных', () => 
 
       const entryTonnage = calculateEntryTonnage(dbEntry, slot);
       expect(entryTonnage).toBe(3 * (30 * 2 * 8)); // 1440 kg
+    });
+  });
+
+  describe('Этап 6: Свойственные тесты (Property Tests) и симуляция', () => {
+    const baseSlot: Slot = {
+      id: 'bench',
+      lift: 'bench',
+      name: 'Жим лёжа',
+      day: 'tue',
+      kind: 'main',
+      inc: 2.5,
+      muscles: { chest: 1 },
+      rx: {
+        vol: { opts: [[3, 10]], rpe: [7, 8], cap: 0.85 },
+        mid: { opts: [[4, 6]], rpe: [8, 9], cap: 0.9 },
+        str: { opts: [[5, 3]], rpe: [8.5, 9.5], cap: 0.95 },
+      },
+    };
+
+    const makeEstimates = (muVal: number): Record<Bin, Estimate> => ({
+      all: { familyId: 'bench', bin: 'all', mu: muVal, p: 9, n: 10, updatedAt: '2026-11-02', hist: [] },
+      low: { familyId: 'bench', bin: 'low', mu: muVal, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+      mid: { familyId: 'bench', bin: 'mid', mu: muVal, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+      high: { familyId: 'bench', bin: 'high', mu: muVal, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+    });
+
+    it('Свойство 1: Монотонность — рост mu не может снизить подсказку при прочих равных', () => {
+      let prevWeight = 0;
+      for (let mu = 60; mu <= 160; mu += 5) {
+        const ests = makeEstimates(mu);
+        const sugg = suggestV2({
+          slot: baseSlot,
+          history: [],
+          estimates: ests,
+          zone: 'mid',
+          selectedVariantId: 'bench_barbell',
+        });
+
+        expect(sugg.weight).toBeGreaterThanOrEqual(prevWeight);
+        prevWeight = sugg.weight;
+      }
+    });
+
+    it('Свойство 2: Потолок — подсказка для main никогда не превышает cap', () => {
+      for (let mu = 70; mu <= 180; mu += 10) {
+        const ests = makeEstimates(mu);
+        for (const z of ['vol', 'mid', 'str'] as const) {
+          const rx = baseSlot.rx[z];
+          const cap = rx.cap!;
+          const sugg = suggestV2({
+            slot: baseSlot,
+            history: [],
+            estimates: ests,
+            zone: z,
+            selectedVariantId: 'bench_barbell',
+          });
+
+          // Suggested weight cannot exceed cap * mu
+          const maxAllowed = cap * mu;
+          expect(sugg.weight).toBeLessThanOrEqual(maxAllowed + 1e-6);
+        }
+      }
+    });
+
+    it('Свойство 3: Дискретность — подсказанный вес всегда достижим LoadScheme', () => {
+      // 1. Barbell (plates: bar 20, step 2.5)
+      for (let mu = 50; mu <= 150; mu += 7) {
+        const ests = makeEstimates(mu);
+        const sugg = suggestV2({
+          slot: baseSlot,
+          history: [],
+          estimates: ests,
+          zone: 'mid',
+          selectedVariantId: 'bench_barbell',
+        });
+        expect(sugg.weight).toBeGreaterThanOrEqual(20);
+        expect((sugg.weight - 20) % 2.5).toBeCloseTo(0, 5);
+      }
+
+      // 2. Dumbbells (list: DEFAULT_DUMBBELL_VALUES)
+      const dumbbellList = DEFAULT_FAMILIES.bench.k.bench_dumbbell ? [
+        2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50,
+      ] : [];
+      for (let mu = 60; mu <= 160; mu += 10) {
+        const ests = makeEstimates(mu);
+        const sugg = suggestV2({
+          slot: baseSlot,
+          history: [],
+          estimates: ests,
+          zone: 'vol',
+          selectedVariantId: 'bench_dumbbell',
+        });
+        expect(dumbbellList).toContain(sugg.weight);
+      }
+    });
+
+    it('Свойство 4: Симметрия переноса — barbell -> dumbbell -> barbell возвращает исходный вес с точностью до шага блинов', () => {
+      const dumbbellScheme = DEFAULT_VARIANTS.bench_dumbbell.loadScheme;
+      const barbellScheme = DEFAULT_VARIANTS.bench_barbell.loadScheme;
+      const kDb = 0.38;
+
+      const testWeights = [70, 80, 90, 100, 110, 120, 130];
+      for (const w0 of testWeights) {
+        // Transfer to dumbbell
+        const wDb = roundToScheme(w0 * kDb, dumbbellScheme);
+        // Transfer back to canonical barbell
+        const canonicalBack = wDb / kDb;
+        const wBarbellBack = roundToScheme(canonicalBack, barbellScheme);
+
+        // Within 1 plate step (2.5 kg)
+        const diff = Math.abs(wBarbellBack - w0);
+        expect(diff).toBeLessThanOrEqual(2.5);
+      }
+    });
+
+    it('Свойство 5: Детерминизм — одинаковый ввод дает строго одинаковый вывод', () => {
+      const ests = makeEstimates(102.5);
+      const ctx = {
+        slot: baseSlot,
+        history: [],
+        estimates: ests,
+        zone: 'mid' as const,
+        selectedVariantId: 'bench_barbell',
+      };
+
+      const out1 = suggestV2(ctx);
+      const out2 = suggestV2(ctx);
+
+      expect(out1).toEqual(out2);
+    });
+
+    it('6.1 & 6.2: Симуляция на 20 сидах подтверждает, что Engine v2 превосходит v1 по MAE', () => {
+      const single = simulate(42);
+      expect(single.v2Mae).toBeLessThan(single.v1Mae);
+
+      const batch = runBatchSimulation(20);
+
+      expect(batch.count).toBe(20);
+      expect(batch.v2MeanMae).toBeLessThan(batch.v1MeanMae);
+      expect(batch.meanImprovementPct).toBeGreaterThan(0);
+      expect(batch.allV2Better).toBe(true);
+    });
+
+    it('6.2: Backtest на сессиях пользователя корректно обрабатывает пустые или заполненные данные', () => {
+      // Empty sessions test
+      const emptyBt = backtestUserSessions([]);
+      expect(emptyBt.totalEvaluations).toBe(0);
+      expect(emptyBt.mae).toBe(0);
+
+      // Replay of 3 sequential sessions
+      const mockSessions: Session[] = [
+        {
+          id: 's1',
+          date: '2026-11-02',
+          day: 'tue',
+          cycle: 1,
+          week: 1,
+          entries: [
+            {
+              slotId: 'bench',
+              variantId: 'bench_barbell',
+              zone: 'mid',
+              variant: 0,
+              rxSnapshot: { opts: [[3, 6]], rpe: [8, 9] },
+              sets: [{ type: 'work', done: true, weight: 80, reps: 6, rpe: 8.5 }],
+            },
+          ],
+        },
+        {
+          id: 's2',
+          date: '2026-11-09',
+          day: 'tue',
+          cycle: 1,
+          week: 2,
+          entries: [
+            {
+              slotId: 'bench',
+              variantId: 'bench_barbell',
+              zone: 'vol',
+              variant: 0,
+              rxSnapshot: { opts: [[3, 10]], rpe: [7, 8] },
+              sets: [{ type: 'work', done: true, weight: 75, reps: 10, rpe: 8.0 }],
+            },
+          ],
+        },
+      ];
+
+      const filledBt = backtestUserSessions(mockSessions);
+      expect(filledBt.totalEvaluations).toBe(1); // Evaluated session 2 from session 1 history
+      expect(filledBt.mae).toBeGreaterThanOrEqual(0);
+      expect(filledBt.evaluations[0].exerciseName).toBe('Жим лёжа');
     });
   });
 });

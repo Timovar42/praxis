@@ -3,6 +3,9 @@ import { useAppStore } from '../../store';
 import { getLiftHistory } from '../../domain/workoutHelper';
 import { weeklyVolume } from '../../domain/volume';
 import type { Muscle } from '../../domain/types';
+import { calculateSessionTonnage } from '../../domain/engine2/tonnage';
+import { rebuildEstimates, calculateTrend } from '../../domain/engine2/estimate';
+import { DEFAULT_FAMILIES } from '../../domain/engine2/families';
 import { format, parseISO, startOfWeek, subWeeks } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import {
@@ -42,7 +45,84 @@ export const ProgressScreen: React.FC = () => {
 
   const formula = settings?.formula ?? 'epley';
 
-  // 1. e1RM history for squat, bench, deadlift
+  // Rebuild Engine v2 estimates for all families
+  const allEstimates = useMemo(() => {
+    return rebuildEstimates(sessions, DEFAULT_FAMILIES, settings ?? {});
+  }, [sessions, settings]);
+
+  const availableLifts = useMemo(() => {
+    const defaultList = [
+      { id: 'all', label: 'Вся база' },
+      { id: 'squat', label: 'Присед' },
+      { id: 'bench', label: 'Жим лёжа' },
+      { id: 'deadlift', label: 'Становая' },
+      { id: 'incline', label: 'Жим в наклоне' },
+      { id: 'biceps', label: 'Бицепс' },
+      { id: 'row', label: 'Тяга к поясу' },
+      { id: 'rdl', label: 'Румынская тяга' },
+    ];
+    for (const [fId, bins] of Object.entries(allEstimates)) {
+      if (bins.all?.n > 0 && !defaultList.some((l) => l.id === fId)) {
+        const famName = DEFAULT_FAMILIES[fId]?.name || fId;
+        defaultList.push({ id: fId, label: famName });
+      }
+    }
+    return defaultList;
+  }, [allEstimates]);
+
+  const selectedFamilyEst = useMemo(() => {
+    if (selectedLift === 'all') return null;
+    return allEstimates[selectedLift]?.all ?? null;
+  }, [allEstimates, selectedLift]);
+
+  const familyChartData = useMemo(() => {
+    if (!selectedFamilyEst || !selectedFamilyEst.hist || selectedFamilyEst.hist.length === 0) {
+      return [];
+    }
+    return selectedFamilyEst.hist.map((h) => ({
+      date: format(parseISO(h.date), 'd MMM', { locale: ru }),
+      fullDate: h.date,
+      mu: Math.round(h.mu * 10) / 10,
+      muUpper: Math.round((h.mu + h.sd) * 10) / 10,
+      muLower: Math.round(Math.max(0, h.mu - h.sd) * 10) / 10,
+      sd: Math.round(h.sd * 10) / 10,
+    }));
+  }, [selectedFamilyEst]);
+
+  const trend = useMemo(() => {
+    if (!selectedFamilyEst || selectedFamilyEst.n < 2) return null;
+    return calculateTrend(selectedFamilyEst);
+  }, [selectedFamilyEst]);
+
+  const trendRate4w = useMemo(() => {
+    if (!selectedFamilyEst || selectedFamilyEst.hist.length < 2) return null;
+    const window = selectedFamilyEst.hist.slice(-8);
+    if (window.length < 2) return null;
+    const t0 = parseISO(window[0].date).getTime();
+    let sumT = 0;
+    let sumMu = 0;
+    const pts = window.map((p) => {
+      const tWeeks = (parseISO(p.date).getTime() - t0) / (7 * 86400 * 1000);
+      sumT += tWeeks;
+      sumMu += p.mu;
+      return { t: tWeeks, mu: p.mu };
+    });
+    const meanT = sumT / pts.length;
+    const meanMu = sumMu / pts.length;
+    let numerator = 0;
+    let denominator = 0;
+    for (const pt of pts) {
+      numerator += (pt.t - meanT) * (pt.mu - meanMu);
+      denominator += (pt.t - meanT) ** 2;
+    }
+    if (denominator === 0) return 0;
+    const slope = numerator / denominator; // kg / week
+    const latestMu = window[window.length - 1].mu;
+    if (latestMu <= 0) return 0;
+    return (slope / latestMu) * 4 * 100; // % over 4 weeks
+  }, [selectedFamilyEst]);
+
+  // 1. e1RM history for squat, bench, deadlift (combined overview)
   const e1rmData = useMemo(() => {
     if (!program) return [];
 
@@ -73,7 +153,7 @@ export const ProgressScreen: React.FC = () => {
     });
   }, [program, sessions, formula]);
 
-  // 2. Weekly Tonnage
+  // 2. Weekly Tonnage (Dumbbells x2 via calculateSessionTonnage)
   const weeklyTonnageData = useMemo(() => {
     const weeksMap: Record<string, { weekStart: string; tonnage: number; sets: number }> = {};
 
@@ -83,11 +163,13 @@ export const ProgressScreen: React.FC = () => {
         weeksMap[mon] = { weekStart: mon, tonnage: 0, sets: 0 };
       }
 
-      for (const entry of session.entries) {
+      const sessionTonnage = calculateSessionTonnage(session, program ?? undefined);
+      weeksMap[mon].tonnage += sessionTonnage;
+
+      for (const entry of session.entries || []) {
         if (entry.skipped) continue;
-        for (const set of entry.sets) {
+        for (const set of entry.sets || []) {
           if (set.done && set.weight && set.reps) {
-            weeksMap[mon].tonnage += set.weight * set.reps;
             weeksMap[mon].sets++;
           }
         }
@@ -101,7 +183,7 @@ export const ProgressScreen: React.FC = () => {
         tonnage: Math.round(w.tonnage),
         sets: w.sets,
       }));
-  }, [sessions]);
+  }, [sessions, program]);
 
   // 3. Current week volume by muscles
   const currentWeekVolume = useMemo(() => {
@@ -176,20 +258,15 @@ export const ProgressScreen: React.FC = () => {
       {/* Tab 1: e1RM Chart */}
       {activeTab === 'e1rm' && (
         <div className="space-y-4">
-          {/* Lift Filter Chips */}
+          {/* Lift / Family Filter Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {[
-              { id: 'all', label: 'Вся база' },
-              { id: 'squat', label: 'Присед' },
-              { id: 'bench', label: 'Жим лёжа' },
-              { id: 'deadlift', label: 'Становая' },
-            ].map((lift) => (
+            {availableLifts.map((lift) => (
               <button
                 key={lift.id}
                 onClick={() => setSelectedLift(lift.id)}
-                className={`px-3 py-1.5 rounded-none text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-colors border ${
+                className={`px-3 py-1.5 rounded-none text-xs font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-colors border cursor-pointer active:scale-95 ${
                   selectedLift === lift.id
-                    ? 'bg-yellow-400 text-black border-yellow-400'
+                    ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.3)]'
                     : 'bg-black border-neutral-800 text-neutral-400 hover:text-white hover:border-yellow-400/50'
                 }`}
               >
@@ -198,49 +275,106 @@ export const ProgressScreen: React.FC = () => {
             ))}
           </div>
 
+          {/* Family Strength mu, Trend & Phase Badges */}
+          {selectedLift !== 'all' && selectedFamilyEst && (
+            <div className="bg-black border-2 border-yellow-400 rounded-none p-3.5 shadow-[0_0_12px_rgba(250,204,21,0.15)] space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest block">
+                    Опорная сила семьи {DEFAULT_FAMILIES[selectedLift]?.name || selectedLift}
+                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-mono font-black text-yellow-400">
+                      {selectedFamilyEst.mu > 0 ? selectedFamilyEst.mu.toFixed(1) : '—'}{' '}
+                      <span className="text-sm font-bold text-white">кг</span>
+                    </span>
+                    {selectedFamilyEst.mu > 0 && (
+                      <span className="text-xs font-mono text-neutral-400">
+                        ±{Math.sqrt(selectedFamilyEst.p).toFixed(1)} кг (1 SD)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {trend && (
+                    <span
+                      className={`text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-none border ${
+                        trend === 'растёт'
+                          ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                          : trend === 'падает'
+                          ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                          : 'bg-neutral-900 text-neutral-300 border-neutral-700'
+                      }`}
+                    >
+                      {trend === 'растёт' && '▲ '}
+                      {trend === 'падает' && '▼ '}
+                      {trend === 'держится' && '■ '}
+                      {trend}{' '}
+                      {trendRate4w != null
+                        ? `(${trendRate4w >= 0 ? '+' : ''}${trendRate4w.toFixed(1)}% / 4 нед)`
+                        : ''}
+                    </span>
+                  )}
+
+                  <span
+                    className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-none border ${
+                      settings?.phase === 'bulk'
+                        ? 'bg-yellow-400/20 text-yellow-400 border-yellow-400/50'
+                        : settings?.phase === 'cut'
+                        ? 'bg-neutral-900 text-neutral-300 border-neutral-700'
+                        : 'bg-black text-neutral-400 border-neutral-800'
+                    }`}
+                  >
+                    Фаза:{' '}
+                    {settings?.phase === 'bulk'
+                      ? 'Набор (+1%)'
+                      : settings?.phase === 'cut'
+                      ? 'Срезка (-2%)'
+                      : 'Удержание'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_15px_rgba(250,204,21,0.15)]">
             <div className="text-xs font-mono font-bold text-yellow-400 mb-3 flex items-center justify-between uppercase tracking-wider">
-              <span>Динамика e1RM (кг)</span>
+              <span>
+                {selectedLift === 'all'
+                  ? 'Динамика e1RM (кг)'
+                  : `Сила семьи μ и коридор ±1 SD (${DEFAULT_FAMILIES[selectedLift]?.name || selectedLift})`}
+              </span>
               <span className="text-neutral-500 lowercase">
                 [{formula === 'epley' ? 'эпли' : 'бжицки'}]
               </span>
             </div>
 
-            {e1rmData.length === 0 ? (
-              <div className="py-16 text-center text-neutral-500 text-xs font-mono">
-                Пока нет сохранённых рабочих подходов по базовым движениям.
-                <br />
-                Заполните тренировку, чтобы увидеть график.
-              </div>
-            ) : (
-              <div className="h-64 sm:h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={e1rmData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                    <XAxis
-                      dataKey="date"
-                      stroke="#a3a3a3"
-                      fontSize={11}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      stroke="#a3a3a3"
-                      fontSize={11}
-                      tickLine={false}
-                      domain={['auto', 'auto']}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#000000',
-                        border: '2px solid #facc15',
-                        borderRadius: '0px',
-                        fontSize: '12px',
-                        color: '#ffffff',
-                        fontFamily: 'monospace',
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', textTransform: 'uppercase' }} />
-                    {(selectedLift === 'all' || selectedLift === 'squat') && (
+            {selectedLift === 'all' ? (
+              e1rmData.length === 0 ? (
+                <div className="py-16 text-center text-neutral-500 text-xs font-mono">
+                  Пока нет сохранённых рабочих подходов по базовым движениям.
+                  <br />
+                  Заполните тренировку, чтобы увидеть график.
+                </div>
+              ) : (
+                <div className="h-64 sm:h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={e1rmData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                      <XAxis dataKey="date" stroke="#a3a3a3" fontSize={11} tickLine={false} />
+                      <YAxis stroke="#a3a3a3" fontSize={11} tickLine={false} domain={['auto', 'auto']} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#000000',
+                          border: '2px solid #facc15',
+                          borderRadius: '0px',
+                          fontSize: '12px',
+                          color: '#ffffff',
+                          fontFamily: 'monospace',
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', textTransform: 'uppercase' }} />
                       <Line
                         type="monotone"
                         dataKey="squat"
@@ -250,8 +384,6 @@ export const ProgressScreen: React.FC = () => {
                         dot={{ r: 4, fill: '#facc15', stroke: '#000' }}
                         connectNulls
                       />
-                    )}
-                    {(selectedLift === 'all' || selectedLift === 'bench') && (
                       <Line
                         type="monotone"
                         dataKey="bench"
@@ -261,8 +393,6 @@ export const ProgressScreen: React.FC = () => {
                         dot={{ r: 4, fill: '#ffffff', stroke: '#000' }}
                         connectNulls
                       />
-                    )}
-                    {(selectedLift === 'all' || selectedLift === 'deadlift') && (
                       <Line
                         type="monotone"
                         dataKey="deadlift"
@@ -272,7 +402,66 @@ export const ProgressScreen: React.FC = () => {
                         dot={{ r: 4, fill: '#eab308', stroke: '#000' }}
                         connectNulls
                       />
-                    )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            ) : familyChartData.length === 0 ? (
+              <div className="py-16 text-center text-neutral-500 text-xs font-mono">
+                Пока нет сохранённых подходов для движения «{DEFAULT_FAMILIES[selectedLift]?.name || selectedLift}».
+                <br />
+                Заполните тренировку, чтобы увидеть график силы семьи и коридор ±1 SD.
+              </div>
+            ) : (
+              <div className="h-64 sm:h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={familyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                    <XAxis dataKey="date" stroke="#a3a3a3" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#a3a3a3" fontSize={11} tickLine={false} domain={['auto', 'auto']} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#000000',
+                        border: '2px solid #facc15',
+                        borderRadius: '0px',
+                        fontSize: '12px',
+                        color: '#ffffff',
+                        fontFamily: 'monospace',
+                      }}
+                      formatter={(val: any, name: any) => {
+                        if (name === 'Сила μ') return [`${val} кг`, 'Сила μ'];
+                        if (name === '+1 SD') return [`${val} кг`, '+1 SD (верх коридора)'];
+                        if (name === '-1 SD') return [`${val} кг`, '-1 SD (низ коридора)'];
+                        return [`${val} кг`, name];
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', textTransform: 'uppercase' }} />
+                    <Line
+                      type="monotone"
+                      dataKey="muUpper"
+                      name="+1 SD"
+                      stroke="#737373"
+                      strokeDasharray="4 4"
+                      dot={false}
+                      strokeWidth={1.5}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="mu"
+                      name="Сила μ"
+                      stroke="#facc15"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#facc15', stroke: '#000' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="muLower"
+                      name="-1 SD"
+                      stroke="#737373"
+                      strokeDasharray="4 4"
+                      dot={false}
+                      strokeWidth={1.5}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

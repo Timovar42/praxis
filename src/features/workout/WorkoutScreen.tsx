@@ -4,6 +4,15 @@ import { ZoneBadge } from '../../components/ZoneBadge';
 import { RestTimer } from './RestTimer';
 import type { Session, SetType, SetLog, Slot, ExerciseLog } from '../../domain/types';
 import { suggest, calcE1RM } from '../../domain/progression';
+import { suggestV2 } from '../../domain/engine2/suggest';
+import { rebuildEstimates } from '../../domain/engine2/estimate';
+import {
+  resolveFamilyForSlot,
+  resolveVariantForEntry,
+  DEFAULT_FAMILIES,
+  INITIAL_VARIANTS,
+} from '../../domain/engine2/families';
+import type { Variant } from '../../domain/engine2/types';
 import {
   getOrCreateSessionForDate,
   isNextUpcomingSessionForSlot,
@@ -75,6 +84,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
   const [quickWeight, setQuickWeight] = useState('');
   const [quickReps, setQuickReps] = useState('');
   const [quickRpe, setQuickRpe] = useState('8');
+  const [expandedSuggestionSlot, setExpandedSuggestionSlot] = useState<string | null>(null);
+
+  const allEstimates = useMemo(() => {
+    return rebuildEstimates(sessions, DEFAULT_FAMILIES, settings ?? {});
+  }, [sessions, settings]);
 
   // Day Customization Mode states
   const [isEditingDay, setIsEditingDay] = useState(false);
@@ -407,22 +421,32 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
             variations: [],
           };
 
+          // Engine v2 Family & Variant Resolution
+          const family = resolveFamilyForSlot(slot, DEFAULT_FAMILIES);
+          const activeVariant = resolveVariantForEntry(slot, entry, family);
+          const isPerHand = Boolean(activeVariant.perHand);
+          const familyVariants = Object.keys(family.k)
+            .map((vid) => INITIAL_VARIANTS[vid])
+            .filter((v): v is Variant => Boolean(v));
+
           // Available equipment/analog variations
           const availableVariations: string[] =
-            slot.variations && slot.variations.length > 0
+            familyVariants.length > 0
+              ? familyVariants.map((v) => v.label)
+              : slot.variations && slot.variations.length > 0
               ? slot.variations
               : slot.lift && EXERCISE_VARIATIONS[slot.lift]
               ? EXERCISE_VARIATIONS[slot.lift]
               : [];
 
-          const currentVariation = entry.variation || availableVariations[0];
+          const currentVariation = entry.variation || activeVariant.label || availableVariations[0];
 
           const isCollapsed = collapsedSlots[slot.id] ?? false;
           const rx = entry.rxSnapshot;
           const currentVariantIndex = entry.variant ?? 0;
           const currentVariant = rx.opts[currentVariantIndex] ?? rx.opts[0];
 
-          // Compute reference e1RM for this lift adapted to current variation
+          // Compute reference e1RM for this lift adapted to current variation (v1 fallback)
           const { value: refE1rm, check: refCheck, adaptedFrom: e1rmAdaptedFrom } = getCurrentLiftE1RMForVariation(
             sessions,
             slot.id,
@@ -431,11 +455,71 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
             settings
           );
 
-          // Compute suggestion
-          const suggestion =
-            !isAdHoc && refE1rm > 0
-              ? suggest(slot, entry.zone, currentVariantIndex, rx, refE1rm, settings)
-              : null;
+          // Determine engine mode
+          const isV2 = (settings?.engine ?? 'v2') === 'v2';
+
+          interface CombinedSuggestion {
+            weight: number;
+            reps: number | [number, number];
+            explanation?: string;
+            targetRpe?: number;
+            confidence?: 'high' | 'med' | 'low';
+            range?: [number, number];
+            alternatives?: { variantId: string; label: string; weight: number }[];
+            explain?: { label: string; value: string }[];
+            flags?: string[];
+            warmups?: { weight: number; reps: number }[];
+            isPerHand?: boolean;
+          }
+
+          let suggestion: CombinedSuggestion | null = null;
+
+          if (isV2 && !isAdHoc && slot.kind !== 'warmup') {
+            const familyEsts = allEstimates[family.id] ?? {
+              all: { familyId: family.id, bin: 'all', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+              low: { familyId: family.id, bin: 'low', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+              mid: { familyId: family.id, bin: 'mid', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+              high: { familyId: family.id, bin: 'high', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+            };
+
+            const v2Res = suggestV2({
+              slot,
+              history: sessions,
+              estimates: familyEsts,
+              allEstimates,
+              family,
+              settings: settings ?? {},
+              selectedVariantId: entry.variantId || activeVariant.id,
+              zone: entry.zone,
+              variantIndex: currentVariantIndex,
+            });
+
+            if (v2Res && v2Res.weight > 0) {
+              suggestion = {
+                weight: v2Res.weight,
+                reps: v2Res.reps,
+                targetRpe: v2Res.targetRpe,
+                confidence: v2Res.confidence,
+                range: v2Res.range,
+                alternatives: v2Res.alternatives,
+                explain: v2Res.explain,
+                flags: v2Res.flags,
+                warmups: v2Res.warmups,
+                isPerHand: v2Res.isPerHand,
+                explanation: v2Res.explain.map((s) => `${s.label}: ${s.value}`).join(' · '),
+              };
+            }
+          } else if (!isAdHoc && slot.kind !== 'warmup' && refE1rm > 0) {
+            const v1Res = suggest(slot, entry.zone, currentVariantIndex, rx, refE1rm, settings);
+            if (v1Res) {
+              suggestion = {
+                weight: v1Res.weight,
+                reps: v1Res.reps,
+                explanation: v1Res.explanation,
+                isPerHand,
+              };
+            }
+          }
 
           // Check if this date is the next upcoming session for this slot
           const isNextSession = isNextUpcomingSessionForSlot(
@@ -673,8 +757,44 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     )}
                   </div>
 
-                  {/* Exercise Analog / Equipment Variation Selector */}
-                  {availableVariations.length > 0 && (
+                  {/* Implement Variant Chips (Engine v2) / Analog Dropdown (Fallback) */}
+                  {familyVariants.length > 0 ? (
+                    <div
+                      className="mt-2.5 flex items-center gap-1.5 flex-wrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] font-mono uppercase font-black text-yellow-400 tracking-wider mr-1">
+                        Снаряд:
+                      </span>
+                      {familyVariants.map((v) => {
+                        const isSelected = activeVariant.id === v.id;
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => {
+                              updateSession((s) => {
+                                const newEntries = [...s.entries];
+                                newEntries[entryIndex] = {
+                                  ...newEntries[entryIndex],
+                                  variantId: v.id,
+                                  variation: v.label,
+                                };
+                                return { ...s, entries: newEntries };
+                              });
+                            }}
+                            className={`px-2.5 py-1 text-xs font-mono font-bold rounded-none uppercase transition-all border cursor-pointer active:scale-95 ${
+                              isSelected
+                                ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                                : 'bg-black text-neutral-400 border-neutral-800 hover:border-neutral-600 hover:text-white'
+                            }`}
+                          >
+                            {v.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : availableVariations.length > 0 ? (
                     <div
                       className="mt-2 flex items-center gap-2"
                       onClick={(e) => e.stopPropagation()}
@@ -701,7 +821,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                         ))}
                       </select>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -763,14 +883,22 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                   {/* Suggestion & Fast Action Banner */}
                   {slot.kind !== 'warmup' && !isAdHoc && (
                     <div
-                      className={`mb-4 p-3 rounded-none border ${
+                      className={`mb-4 p-3 rounded-none border transition-all ${
                         isNextSession
                           ? 'border-yellow-400 bg-neutral-950 shadow-[0_0_10px_rgba(250,204,21,0.15)]'
                           : 'border-yellow-500/30 bg-black'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 flex-wrap">
-                        <div className="flex-1">
+                        <div
+                          className="flex-1 cursor-pointer select-none"
+                          onClick={() =>
+                            setExpandedSuggestionSlot(
+                              expandedSuggestionSlot === slot.id ? null : slot.id
+                            )
+                          }
+                          title="Нажмите для просмотра обоснования, диапазона и альтернатив"
+                        >
                           <div className="flex items-center gap-2 flex-wrap">
                             <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
                             {suggestion ? (
@@ -779,7 +907,16 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                 <span className="text-yellow-400 text-base font-black">
                                   {suggestion.weight} кг
                                 </span>{' '}
-                                × {Array.isArray(suggestion.reps) ? `${suggestion.reps[0]}-${suggestion.reps[1]}` : suggestion.reps} повт.
+                                {isPerHand && (
+                                  <span className="text-yellow-400/90 text-xs font-bold lowercase">
+                                    (на руку){' '}
+                                  </span>
+                                )}
+                                ×{' '}
+                                {Array.isArray(suggestion.reps)
+                                  ? `${suggestion.reps[0]}-${suggestion.reps[1]}`
+                                  : suggestion.reps}{' '}
+                                повт.
                               </span>
                             ) : (
                               <span className="text-xs text-neutral-400 font-mono">
@@ -792,24 +929,51 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                 → СЛЕДУЮЩАЯ
                               </span>
                             )}
+                            {/* Badges for calibration, check and confidence */}
+                            {(suggestion?.flags?.includes('первая калибровка снаряда') ||
+                              (family.k[activeVariant.id]?.n < 3 && activeVariant.id !== family.canonical)) && (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-amber-400/20 text-amber-300 border border-amber-400/60 uppercase">
+                                первая калибровка снаряда
+                              </span>
+                            )}
+                            {(refCheck || suggestion?.flags?.includes('проверь ввод')) && (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-red-500/20 text-red-400 border border-red-500/60 uppercase">
+                                проверь ввод
+                              </span>
+                            )}
+                            {suggestion?.confidence && (
+                              <span
+                                className={`text-[10px] font-mono font-bold px-1.5 py-0.2 uppercase border ${
+                                  suggestion.confidence === 'high'
+                                    ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/40'
+                                    : suggestion.confidence === 'med'
+                                    ? 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                                    : 'bg-neutral-900 text-neutral-400 border-neutral-800'
+                                }`}
+                              >
+                                {suggestion.confidence === 'high'
+                                  ? 'Высокая'
+                                  : suggestion.confidence === 'med'
+                                  ? 'Средняя'
+                                  : '≈ Низкая'}
+                              </span>
+                            )}
                             {e1rmAdaptedFrom && (
                               <span
                                 className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-yellow-400/20 text-yellow-400 border border-yellow-400/50 uppercase"
                                 title={`Адаптировано с ${e1rmAdaptedFrom}`}
                               >
-                                ⚡ Снаряд: {e1rmAdaptedFrom} → {currentVariation}
-                              </span>
-                            )}
-                            {refCheck && (
-                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 border border-yellow-400 text-yellow-400 uppercase">
-                                Проверь ввод
+                                ⚡ {e1rmAdaptedFrom} → {currentVariation}
                               </span>
                             )}
                           </div>
 
                           {suggestion && (
-                            <p className="text-[11px] text-neutral-400 mt-1 font-mono">
-                              {suggestion.explanation}
+                            <p className="text-[11px] text-neutral-400 mt-1 font-mono flex items-center gap-1.5">
+                              <span>{suggestion.explanation}</span>
+                              <span className="text-yellow-400/70 text-[10px] underline">
+                                {expandedSuggestionSlot === slot.id ? 'свернуть ▲' : 'подробнее ▼'}
+                              </span>
                             </p>
                           )}
                         </div>
@@ -819,7 +983,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           {suggestion && (
                             <button
                               onClick={handleAcceptSuggestion}
-                              className="px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black rounded-none text-xs font-black uppercase tracking-wider border border-yellow-400 active:scale-95 transition-all flex items-center gap-1 shadow"
+                              className="px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black rounded-none text-xs font-black uppercase tracking-wider border border-yellow-400 active:scale-95 transition-all flex items-center gap-1 shadow cursor-pointer"
                               title="Принять подсказку"
                             >
                               <Check className="w-4 h-4 stroke-[3]" />
@@ -830,7 +994,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           {lastLogged && (
                             <button
                               onClick={handleCopyLastTime}
-                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 rounded-none text-xs font-mono font-bold uppercase tracking-wider border border-neutral-700 active:scale-95 transition-all flex items-center gap-1"
+                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 rounded-none text-xs font-mono font-bold uppercase tracking-wider border border-neutral-700 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                               title={
                                 lastLoggedResult?.adapted
                                   ? `Адаптировано по весу из снаряда «${lastLoggedResult.sourceVariation}»`
@@ -851,7 +1015,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                               onClick={() =>
                                 setQuickCalcOpen(quickCalcOpen === slot.id ? null : slot.id)
                               }
-                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-yellow-400 border border-yellow-500/50 rounded-none text-xs font-mono font-bold uppercase active:scale-95 transition-all flex items-center gap-1"
+                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-yellow-400 border border-yellow-500/50 rounded-none text-xs font-mono font-bold uppercase active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                             >
                               <Info className="w-3.5 h-3.5" />
                               <span>Ввод 1ПМ</span>
@@ -889,10 +1053,134 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           </select>
                           <button
                             onClick={handleApplyQuickE1rm}
-                            className="h-10 px-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black uppercase tracking-wider text-xs rounded-none border border-yellow-400"
+                            className="h-10 px-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black uppercase tracking-wider text-xs rounded-none border border-yellow-400 cursor-pointer"
                           >
                             Применить
                           </button>
+                        </div>
+                      )}
+
+                      {/* Expanded Suggestion Panel: Explanation, Range, Alternatives, Warmups */}
+                      {expandedSuggestionSlot === slot.id && suggestion && (
+                        <div className="mt-3 pt-3 border-t border-yellow-500/30 space-y-3 font-mono text-xs">
+                          {/* Range and Confidence */}
+                          {suggestion.range && (
+                            <div className="flex items-center justify-between bg-black p-2.5 border border-yellow-500/40">
+                              <span className="text-neutral-400 uppercase text-[10px] font-bold">
+                                Рекомендуемый диапазон веса:
+                              </span>
+                              <span className="text-yellow-400 font-mono font-black text-sm">
+                                {suggestion.confidence === 'low' ? '≈ ' : ''}
+                                {suggestion.range[0]} – {suggestion.range[1]} кг
+                                {isPerHand ? ' (на руку)' : ''}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Step-by-Step Explanation */}
+                          {suggestion.explain && suggestion.explain.length > 0 && (
+                            <div className="bg-black p-2.5 border border-neutral-800">
+                              <div className="text-[10px] font-black uppercase text-yellow-400 mb-1.5 tracking-wider">
+                                Детальный расчёт подсказки:
+                              </div>
+                              <div className="space-y-1">
+                                {suggestion.explain.map((step, sIdx) => (
+                                  <div
+                                    key={sIdx}
+                                    className="flex items-center justify-between text-[11px] py-0.5 border-b border-neutral-900 last:border-0"
+                                  >
+                                    <span className="text-neutral-400">{step.label}</span>
+                                    <span className="text-white font-bold">{step.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Alternatives table */}
+                          {suggestion.alternatives && suggestion.alternatives.length > 0 && (
+                            <div className="bg-black p-2.5 border border-neutral-800">
+                              <div className="text-[10px] font-black uppercase text-yellow-400 mb-1.5 tracking-wider">
+                                Если делаешь с другим снарядом:
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {suggestion.alternatives.map((alt) => (
+                                  <button
+                                    key={alt.variantId}
+                                    type="button"
+                                    onClick={() => {
+                                      updateSession((s) => {
+                                        const newEntries = [...s.entries];
+                                        newEntries[entryIndex] = {
+                                          ...newEntries[entryIndex],
+                                          variantId: alt.variantId,
+                                          variation: alt.label,
+                                        };
+                                        return { ...s, entries: newEntries };
+                                      });
+                                    }}
+                                    className="p-1.5 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 hover:border-yellow-400 flex items-center justify-between text-left group transition-colors cursor-pointer"
+                                  >
+                                    <span className="text-neutral-300 group-hover:text-yellow-400">
+                                      {alt.label}
+                                    </span>
+                                    <span className="text-yellow-400 font-black">
+                                      {alt.weight} кг
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Warmup ladder (main lifts) */}
+                          {suggestion.warmups && suggestion.warmups.length > 0 && (
+                            <div className="bg-black p-2.5 border border-yellow-500/40">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="text-[10px] font-black uppercase text-yellow-400 tracking-wider">
+                                  Разминочная лесенка (Main):
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateSession((s) => {
+                                      const newEntries = [...s.entries];
+                                      const curSets = [...newEntries[entryIndex].sets];
+                                      const newWarmupSets: SetLog[] = suggestion.warmups!.map((w) => ({
+                                        type: 'warmup',
+                                        weight: w.weight,
+                                        reps: w.reps,
+                                        done: false,
+                                      }));
+                                      newEntries[entryIndex] = {
+                                        ...newEntries[entryIndex],
+                                        sets: [
+                                          ...newWarmupSets,
+                                          ...curSets.filter((st) => st.type !== 'warmup'),
+                                        ],
+                                      };
+                                      return { ...s, entries: newEntries };
+                                    });
+                                  }}
+                                  className="text-[9px] uppercase font-mono font-black px-2 py-0.5 bg-neutral-900 hover:bg-yellow-400 hover:text-black text-yellow-400 border border-yellow-500/50 transition-colors cursor-pointer"
+                                >
+                                  + Добавить в таблицу
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1 text-center">
+                                {suggestion.warmups.map((w, wIdx) => {
+                                  const pctLabel = [40, 60, 75, 90][wIdx] ?? 50;
+                                  return (
+                                    <div key={wIdx} className="bg-neutral-950 border border-neutral-800 p-1.5">
+                                      <div className="text-[9px] text-neutral-500 font-bold">{pctLabel}%</div>
+                                      <div className="text-xs font-black text-white">{w.weight} кг</div>
+                                      <div className="text-[10px] text-neutral-400">× {w.reps}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -936,7 +1224,9 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                   <div className="space-y-1.5">
                     <div className="grid grid-cols-12 gap-1 sm:gap-1.5 text-[10px] font-mono font-black text-neutral-400 px-1 uppercase tracking-widest">
                       <div className="col-span-2 text-center">№ / ТИП</div>
-                      <div className="col-span-3 text-center">ВЕС (КГ)</div>
+                      <div className="col-span-3 text-center">
+                        {isPerHand ? 'ВЕС / РУКА' : 'ВЕС (КГ)'}
+                      </div>
                       <div className="col-span-2 text-center">ПОВТ</div>
                       <div className="col-span-2 text-center">RPE</div>
                       <div className="col-span-2 text-center">✓</div>
@@ -944,7 +1234,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     </div>
 
                     {entry.sets.map((set, setIdx) => {
-                      const placeholderWeight = suggestion ? `${suggestion.weight}` : '';
+                      const placeholderWeight = suggestion
+                        ? `${suggestion.weight}${isPerHand ? ' (на руку)' : ''}`
+                        : isPerHand
+                        ? 'на руку'
+                        : '';
                       const placeholderReps = suggestion
                         ? `${Array.isArray(suggestion.reps) ? suggestion.reps[1] : suggestion.reps}`
                         : '';
@@ -988,22 +1282,25 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           {/* Weight input - 48px height, strict corners */}
                           <div className="col-span-3">
                             <input
-                              type="number"
-                              step="any"
+                              type="text"
                               inputMode="decimal"
                               placeholder={placeholderWeight}
                               value={set.weight ?? ''}
                               onChange={(e) => {
-                                const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                const raw = e.target.value.replace(',', '.');
+                                const val = raw === '' ? undefined : parseFloat(raw);
                                 updateSession((s) => {
                                   const newEntries = [...s.entries];
                                   const curSets = [...newEntries[entryIndex].sets];
-                                  curSets[setIdx] = { ...curSets[setIdx], weight: val };
+                                  curSets[setIdx] = {
+                                    ...curSets[setIdx],
+                                    weight: isNaN(val as number) ? undefined : val,
+                                  };
                                   newEntries[entryIndex] = { ...newEntries[entryIndex], sets: curSets };
                                   return { ...s, entries: newEntries };
                                 });
                               }}
-                              className="w-full h-12 px-1 text-center bg-black border border-neutral-700 rounded-none text-sm sm:text-base font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
+                              className="w-full h-12 px-1 text-center bg-black border border-neutral-700 rounded-none text-xs sm:text-sm font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
                             />
                           </div>
 

@@ -27,11 +27,18 @@ export interface KPrior {
   n: number;
 }
 
+export interface CrossPrior {
+  targetFamilyId: string;
+  ratio: number;
+  conf: 'high' | 'med' | 'low';
+}
+
 export interface Family {
   id: string;
   name: string;
   canonical: string; // у канонического варианта k = 1
   k: Record<string, KPrior>;
+  crossPrior?: CrossPrior;
 }
 
 export type Bin = 'all' | 'low' | 'mid' | 'high';
