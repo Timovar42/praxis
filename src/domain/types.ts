@@ -25,6 +25,10 @@ export interface Slot {
   rx: Record<Zone, Rx>;
   variations?: string[]; // available equipment/analog alternatives
   superset?: boolean; // part of a superset
+  // Engine v2:
+  familyId?: string;
+  variants?: string[];
+  defaultVariant?: string;
 }
 
 export interface Program {
@@ -59,6 +63,7 @@ export interface ExerciseLog {
   variation?: string; // selected analog (e.g. "в гакке", "со штангой")
   customName?: string; // custom exercise name if added ad-hoc
   superset?: boolean; // whether this exercise is marked as part of a superset (adjacent exercises executed with no rest)
+  variantId?: string; // Engine v2 variant id
 }
 
 export interface CardioSession {
@@ -108,7 +113,27 @@ export interface Settings {
   units: 'kg';
   profile?: UserProfile;
   googleClientId?: string;
+  // Engine v2:
+  engine?: 'v1' | 'v2';
+  phase?: 'cut' | 'maintain' | 'bulk'; // default 'cut'
+  mode?: 'conservative' | 'normal' | 'aggressive'; // default 'normal'
+  barWeight?: number; // default 20
+  minStep?: number; // default 2.5
+  dumbbellList?: number[]; // list of available dumbbells per hand
+  stackSteps?: Record<string, number> | number; // machine stack step
+  warmups?: boolean; // default true
 }
+
+export type {
+  Implement,
+  LoadScheme,
+  Variant,
+  KPrior,
+  Family,
+  Bin,
+  Estimate,
+  Trend,
+} from './engine2/types';
 
 export interface Suggestion {
   weight: number;

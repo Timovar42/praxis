@@ -1,4 +1,4 @@
-import type { Program, Session, Settings, UserAccount } from '../domain/types';
+import type { Program, Session, Settings, UserAccount, Estimate, Family } from '../domain/types';
 
 export interface AppEvent {
   id?: number;
@@ -32,6 +32,12 @@ export interface Repository {
   getUserByEmail?(email: string): Promise<UserAccount | null>;
   saveUser(u: UserAccount): Promise<void>;
   deleteUser(id: string): Promise<void>;
+
+  // Families & Estimates (Engine v2)
+  getFamilies?(userId?: string): Promise<Family[]>;
+  saveFamily?(f: Family, userId?: string): Promise<void>;
+  getEstimates?(userId?: string): Promise<Estimate[]>;
+  saveEstimates?(estimates: Estimate[], userId?: string): Promise<void>;
 
   // Export/Import
   exportJSON(userId?: string): Promise<string>;

@@ -1,9 +1,12 @@
 import Dexie, { type Table } from 'dexie';
-import type { Program, Session, Settings, UserAccount } from '../domain/types';
+import type { Program, Session, Settings, UserAccount, Estimate, Family } from '../domain/types';
 import type { AppEvent, Repository } from './repository';
 import { seedProgram } from '../data/seedProgram';
+import { DEFAULT_DUMBBELL_VALUES, DEFAULT_FAMILIES } from '../domain/engine2/families';
+import { rebuildEstimates } from '../domain/engine2/estimate';
+import { migrateProgramV1toV2, migrateSessionsV1toV2 } from '../domain/engine2/migration';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export const DEFAULT_USER_ACCOUNT: UserAccount = {
   id: 'user_default',
@@ -20,6 +23,8 @@ class PraxisDB extends Dexie {
   settings!: Table<Settings & { id: string; userId?: string }, string>;
   events!: Table<AppEvent & { userId?: string }, number>;
   users!: Table<UserAccount, string>;
+  families!: Table<Family & { userId?: string }, string>;
+  estimates!: Table<Estimate & { userId?: string }, string>;
 
   constructor() {
     super('PraxisDB');
@@ -30,6 +35,52 @@ class PraxisDB extends Dexie {
       events: '++id, type, createdAt, userId',
       users: 'id, email',
     });
+
+    this.version(2)
+      .stores({
+        programs: 'id, userId',
+        sessions: 'id, date, day, userId',
+        settings: 'id, userId',
+        events: '++id, type, createdAt, userId',
+        users: 'id, email',
+        families: 'id, userId',
+        estimates: 'id, familyId, bin, userId',
+      })
+      .upgrade(async (tx) => {
+        try {
+          const programsTable = tx.table('programs');
+          const sessionsTable = tx.table('sessions');
+          const estimatesTable = tx.table('estimates');
+
+          const allPrograms = await programsTable.toArray();
+          for (const p of allPrograms) {
+            const migrated = migrateProgramV1toV2(p);
+            await programsTable.put(migrated);
+          }
+
+          const allSessions = await sessionsTable.toArray();
+          const migratedSessions = migrateSessionsV1toV2(allSessions, allPrograms[0]);
+          for (const s of migratedSessions) {
+            await sessionsTable.put(s);
+          }
+
+          // Rebuild estimates cache
+          const rebuilt = rebuildEstimates(migratedSessions, DEFAULT_FAMILIES);
+          for (const [fId, bins] of Object.entries(rebuilt)) {
+            for (const [bKey, est] of Object.entries(bins)) {
+              if (est.n > 0) {
+                await estimatesTable.put({
+                  ...est,
+                  id: `${est.userId || 'user_default'}_${fId}_${bKey}`,
+                  userId: est.userId || 'user_default',
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('PraxisDB v2 migration notice:', err);
+        }
+      });
   }
 }
 
@@ -76,10 +127,55 @@ export const dexieRepo: Repository = {
 
   async saveSession(s, userId = 'user_default') {
     await db.sessions.put({ ...s, userId });
+    try {
+      const allSessions = await db.sessions.where('userId').equals(userId).toArray();
+      const settings = (await db.settings.where('userId').equals(userId).first()) || {};
+      const rebuilt = rebuildEstimates(allSessions, DEFAULT_FAMILIES, settings);
+      const records: (Estimate & { id: string; userId: string })[] = [];
+      for (const [fId, bins] of Object.entries(rebuilt)) {
+        for (const [bKey, est] of Object.entries(bins)) {
+          if (est.n > 0) {
+            records.push({
+              ...est,
+              id: `${userId}_${fId}_${bKey}`,
+              userId,
+            });
+          }
+        }
+      }
+      if (records.length > 0) {
+        await db.estimates.bulkPut(records);
+      }
+    } catch (err) {
+      console.warn('Estimates cache update notice:', err);
+    }
   },
 
-  async deleteSession(id) {
+  async deleteSession(id, userId = 'user_default') {
     await db.sessions.delete(id);
+    try {
+      const allSessions = await db.sessions.where('userId').equals(userId).toArray();
+      const settings = (await db.settings.where('userId').equals(userId).first()) || {};
+      const rebuilt = rebuildEstimates(allSessions, DEFAULT_FAMILIES, settings);
+      await db.estimates.where('userId').equals(userId).delete();
+      const records: (Estimate & { id: string; userId: string })[] = [];
+      for (const [fId, bins] of Object.entries(rebuilt)) {
+        for (const [bKey, est] of Object.entries(bins)) {
+          if (est.n > 0) {
+            records.push({
+              ...est,
+              id: `${userId}_${fId}_${bKey}`,
+              userId,
+            });
+          }
+        }
+      }
+      if (records.length > 0) {
+        await db.estimates.bulkPut(records);
+      }
+    } catch (err) {
+      console.warn('Estimates cache update notice:', err);
+    }
   },
 
   async getSettings(userId = 'user_default') {
@@ -137,12 +233,36 @@ export const dexieRepo: Repository = {
     });
   },
 
+  async getFamilies(userId = 'user_default') {
+    const list = await db.families.where('userId').equals(userId).toArray();
+    if (list.length > 0) return list;
+    return Object.values(DEFAULT_FAMILIES);
+  },
+
+  async saveFamily(f: Family, userId = 'user_default') {
+    await db.families.put({ ...f, userId });
+  },
+
+  async getEstimates(userId = 'user_default') {
+    return db.estimates.where('userId').equals(userId).toArray();
+  },
+
+  async saveEstimates(estimates: Estimate[], userId = 'user_default') {
+    const records = estimates.map((e) => ({
+      ...e,
+      id: e.id || `${userId}_${e.familyId}_${e.bin}`,
+      userId,
+    }));
+    await db.estimates.bulkPut(records);
+  },
+
   async exportJSON(userId = 'user_default') {
-    const [programs, sessions, settings, events] = await Promise.all([
+    const [programs, sessions, settings, events, estimates] = await Promise.all([
       db.programs.where('userId').equals(userId).toArray(),
       db.sessions.where('userId').equals(userId).toArray(),
       db.settings.where('userId').equals(userId).toArray(),
       db.events.where('userId').equals(userId).toArray(),
+      db.estimates.where('userId').equals(userId).toArray(),
     ]);
     return JSON.stringify(
       {
@@ -152,6 +272,7 @@ export const dexieRepo: Repository = {
         sessions,
         settings: settings[0] ?? (await db.settings.get('default')),
         events,
+        estimates,
       },
       null,
       2
@@ -161,7 +282,7 @@ export const dexieRepo: Repository = {
   async importJSON(json, userId = 'user_default') {
     const data = JSON.parse(json);
     if (!data.schemaVersion) throw new Error('Invalid export: missing schemaVersion');
-    await db.transaction('rw', db.programs, db.sessions, db.settings, db.events, async () => {
+    await db.transaction('rw', db.programs, db.sessions, db.settings, db.events, db.estimates, async () => {
       if (data.program) {
         await db.programs.put({ ...data.program, userId });
       }
@@ -175,6 +296,21 @@ export const dexieRepo: Repository = {
         await db.events.bulkAdd(
           data.events.map((e: AppEvent) => ({ ...e, id: undefined, userId }))
         );
+      }
+      // Rebuild estimates cache from imported sessions
+      if (data.sessions && data.sessions.length > 0) {
+        const rebuilt = rebuildEstimates(data.sessions, DEFAULT_FAMILIES, data.settings || {});
+        for (const [fId, bins] of Object.entries(rebuilt)) {
+          for (const [bKey, est] of Object.entries(bins)) {
+            if (est.n > 0) {
+              await db.estimates.put({
+                ...est,
+                id: `${userId}_${fId}_${bKey}`,
+                userId,
+              });
+            }
+          }
+        }
       }
     });
   },
@@ -219,10 +355,11 @@ export async function initRepo() {
   // 3. Ensure baseline default program exists for cloning
   const existingProgram = await dexieRepo.getProgram('user_default');
   if (!existingProgram) {
-    await dexieRepo.saveProgram(seedProgram, 'user_default');
+    const v2Seed = migrateProgramV1toV2(seedProgram);
+    await dexieRepo.saveProgram(v2Seed, 'user_default');
   }
 
-  // 5. Ensure default settings exist
+  // 5. Ensure default settings exist with engine v2 defaults
   const settings = await dexieRepo.getSettings('user_default');
   if (!settings) {
     await dexieRepo.saveSettings(
@@ -230,17 +367,30 @@ export async function initRepo() {
         rpeMode: 'mid',
         formula: 'epley',
         units: 'kg',
+        engine: 'v2',
+        phase: 'cut',
+        mode: 'normal',
+        barWeight: 20,
+        minStep: 2.5,
+        dumbbellList: DEFAULT_DUMBBELL_VALUES,
+        warmups: true,
         profile: { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
       },
       'user_default'
     );
-  } else if (!settings.profile) {
-    await dexieRepo.saveSettings(
-      {
-        ...settings,
-        profile: { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
-      },
-      'user_default'
-    );
+  } else {
+    // Fill in any missing engine v2 settings fields
+    const updated: Settings = {
+      ...settings,
+      engine: settings.engine || 'v2',
+      phase: settings.phase || 'cut',
+      mode: settings.mode || 'normal',
+      barWeight: settings.barWeight ?? 20,
+      minStep: settings.minStep ?? 2.5,
+      dumbbellList: settings.dumbbellList || DEFAULT_DUMBBELL_VALUES,
+      warmups: settings.warmups ?? true,
+      profile: settings.profile || { gender: 'male', age: 18, height: 183, weight: 92, bodyFatPct: 27 },
+    };
+    await dexieRepo.saveSettings(updated, 'user_default');
   }
 }
