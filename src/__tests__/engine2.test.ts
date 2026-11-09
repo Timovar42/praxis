@@ -8,7 +8,14 @@ import {
   calculateTrend,
   getCalibratedE1RM,
 } from '../domain/engine2/estimate';
-import { DEFAULT_FAMILIES, DEFAULT_VARIANTS, learnK } from '../domain/engine2/families';
+import {
+  DEFAULT_FAMILIES,
+  DEFAULT_VARIANTS,
+  DEFAULT_DUMBBELL_VALUES,
+  learnK,
+  resolveFamilyForSlot,
+  resolveVariantForEntry,
+} from '../domain/engine2/families';
 import { migrateAllV1toV2 } from '../domain/engine2/migration';
 import { suggestV2, roundToScheme } from '../domain/engine2/suggest';
 import { calculateSetTonnage, calculateEntryTonnage } from '../domain/engine2/tonnage';
@@ -862,6 +869,71 @@ describe('Engine v2: Оценка силы и модель данных', () => 
       expect(filledBt.totalEvaluations).toBe(1); // Evaluated session 2 from session 1 history
       expect(filledBt.mae).toBeGreaterThanOrEqual(0);
       expect(filledBt.evaluations[0].exerciseName).toBe('Жим лёжа');
+    });
+
+    it('Бицепс и гантели: потолок и округление никогда не выдают дробные хвосты вроде 16.666666 кг', () => {
+      const curlSlot: Slot = {
+        id: 'curl',
+        lift: 'curl',
+        name: 'Бицепс со штангой / гантели',
+        day: 'wed',
+        kind: 'main',
+        inc: 2.5,
+        muscles: { biceps: 1 },
+        rx: {
+          vol: { opts: [[4, 10]], rpe: [7, 8], cap: 0.70 },
+          mid: { opts: [[4, 8]], rpe: [8, 8], cap: 0.80 },
+          str: { opts: [[3, 6]], rpe: [8, 8.5], cap: 0.85 },
+        },
+      };
+
+      // Test across multiple strength levels
+      for (let mu = 20; mu <= 80; mu += 3.7) {
+        const ests = makeEstimates(mu);
+        const sugg = suggestV2({
+          slot: curlSlot,
+          history: [],
+          estimates: ests,
+          zone: 'vol',
+          selectedVariantId: 'biceps_dumbbell',
+        });
+
+        // Must be a valid integer dumbbell weight from DEFAULT_DUMBBELL_VALUES
+        expect(DEFAULT_DUMBBELL_VALUES).toContain(sugg.weight);
+        expect(Number.isInteger(sugg.weight)).toBe(true);
+        expect(String(sugg.weight)).not.toContain('.');
+        // Range must also be valid dumbbells
+        expect(DEFAULT_DUMBBELL_VALUES).toContain(sugg.range[0]);
+        expect(DEFAULT_DUMBBELL_VALUES).toContain(sugg.range[1]);
+      }
+    });
+
+    it('Разрешение аналогов: текстовые названия упражнений точно определяют правильный снаряд', () => {
+      const curlSlot: Slot = {
+        id: 'curl',
+        lift: 'curl',
+        name: 'Бицепс',
+        day: 'wed',
+        kind: 'main',
+        inc: 2.5,
+        muscles: { biceps: 1 },
+        rx: {
+          vol: { opts: [[3, 8]] },
+          mid: { opts: [[3, 8]] },
+          str: { opts: [[3, 8]] },
+        },
+      };
+
+      const fam = resolveFamilyForSlot(curlSlot);
+      expect(fam.id).toBe('biceps');
+
+      const dbVar = resolveVariantForEntry(curlSlot, { variation: 'С гантелями сидя' } as any, fam);
+      expect(dbVar.implement).toBe('dumbbell');
+      expect(dbVar.perHand).toBe(true);
+
+      const bbVar = resolveVariantForEntry(curlSlot, { variation: 'Строгий со штангой' } as any, fam);
+      expect(bbVar.implement).toBe('barbell');
+      expect(bbVar.perHand).toBeFalsy();
     });
   });
 });

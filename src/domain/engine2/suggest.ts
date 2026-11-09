@@ -71,12 +71,13 @@ export function roundToScheme(weight: number, scheme: LoadScheme): number {
     const bar = scheme.bar;
     const step = scheme.minStep || 2.5;
     if (weight <= bar) return bar;
-    return bar + Math.round((weight - bar) / step) * step;
+    const rounded = bar + Math.round((weight - bar) / step) * step;
+    return Math.round(rounded * 100) / 100;
   }
 
   if (scheme.type === 'list') {
     const values = [...scheme.values].sort((a, b) => a - b);
-    if (values.length === 0) return weight;
+    if (values.length === 0) return Math.round(weight * 100) / 100;
     if (weight <= values[0]) return values[0];
     if (weight >= values[values.length - 1]) return values[values.length - 1];
 
@@ -95,10 +96,11 @@ export function roundToScheme(weight: number, scheme: LoadScheme): number {
   if (scheme.type === 'stack') {
     const step = scheme.step || 5.0;
     if (weight <= 0) return step;
-    return Math.max(step, Math.round(weight / step) * step);
+    const rounded = Math.max(step, Math.round(weight / step) * step);
+    return Math.round(rounded * 100) / 100;
   }
 
-  return weight;
+  return Math.round(weight * 100) / 100;
 }
 
 /**
@@ -109,36 +111,38 @@ export function getSchemeCandidates(
   scheme: LoadScheme,
   capValue?: number
 ): { lo: number; hi: number } {
+  const effectiveW = capValue != null ? Math.min(weight, capValue) : weight;
+
   let lo: number;
   let hi: number;
 
   if (scheme.type === 'plates') {
     const bar = scheme.bar;
     const step = scheme.minStep || 2.5;
-    if (weight <= bar) {
+    if (effectiveW <= bar) {
       lo = bar;
       hi = bar;
     } else {
-      lo = bar + Math.floor((weight - bar) / step) * step;
-      hi = bar + Math.ceil((weight - bar) / step) * step;
+      lo = Math.round((bar + Math.floor((effectiveW - bar) / step) * step) * 100) / 100;
+      hi = Math.round((bar + Math.ceil((effectiveW - bar) / step) * step) * 100) / 100;
     }
   } else if (scheme.type === 'list') {
     const values = [...scheme.values].sort((a, b) => a - b);
     if (values.length === 0) {
-      lo = weight;
-      hi = weight;
-    } else if (weight <= values[0]) {
+      lo = Math.round(effectiveW * 100) / 100;
+      hi = lo;
+    } else if (effectiveW <= values[0]) {
       lo = values[0];
       hi = values[0];
-    } else if (weight >= values[values.length - 1]) {
+    } else if (effectiveW >= values[values.length - 1]) {
       lo = values[values.length - 1];
       hi = values[values.length - 1];
     } else {
       let l = values[0];
       let h = values[values.length - 1];
       for (const v of values) {
-        if (v <= weight) l = v;
-        if (v >= weight && h === values[values.length - 1]) h = v;
+        if (v <= effectiveW) l = v;
+        if (v >= effectiveW && h === values[values.length - 1]) h = v;
       }
       lo = l;
       hi = h;
@@ -146,8 +150,8 @@ export function getSchemeCandidates(
   } else {
     // stack
     const step = scheme.step || 5.0;
-    lo = Math.max(step, Math.floor(weight / step) * step);
-    hi = Math.max(step, Math.ceil(weight / step) * step);
+    lo = Math.round(Math.max(step, Math.floor(effectiveW / step) * step) * 100) / 100;
+    hi = Math.round(Math.max(step, Math.ceil(effectiveW / step) * step) * 100) / 100;
   }
 
   // Active cap rule: "при активном потолке только кандидаты не выше потолка"
@@ -155,8 +159,23 @@ export function getSchemeCandidates(
     if (hi > capValue && lo <= capValue) {
       hi = lo;
     } else if (lo > capValue) {
-      lo = capValue;
-      hi = capValue;
+      if (scheme.type === 'plates') {
+        const bar = scheme.bar;
+        const step = scheme.minStep || 2.5;
+        const bounded = bar + Math.floor((capValue - bar) / step) * step;
+        lo = Math.round(Math.max(bar, bounded) * 100) / 100;
+        hi = lo;
+      } else if (scheme.type === 'list') {
+        const allowed = scheme.values.filter((v) => v <= capValue);
+        const best = allowed.length > 0 ? Math.max(...allowed) : scheme.values[0];
+        lo = best;
+        hi = best;
+      } else {
+        const step = scheme.step || 5.0;
+        const bounded = Math.floor(capValue / step) * step;
+        lo = Math.round(Math.max(step, bounded) * 100) / 100;
+        hi = lo;
+      }
     }
   }
 

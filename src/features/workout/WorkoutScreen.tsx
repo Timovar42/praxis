@@ -430,16 +430,21 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
             .filter((v): v is Variant => Boolean(v));
 
           // Available equipment/analog variations
-          const availableVariations: string[] =
-            familyVariants.length > 0
-              ? familyVariants.map((v) => v.label)
-              : slot.variations && slot.variations.length > 0
+          const exerciseAnalogs: string[] =
+            slot.variations && slot.variations.length > 0
               ? slot.variations
               : slot.lift && EXERCISE_VARIATIONS[slot.lift]
               ? EXERCISE_VARIATIONS[slot.lift]
               : [];
 
-          const currentVariation = entry.variation || activeVariant.label || availableVariations[0];
+          const availableVariations: string[] =
+            exerciseAnalogs.length > 0
+              ? exerciseAnalogs
+              : familyVariants.length > 0
+              ? familyVariants.map((v) => v.label)
+              : [];
+
+          const currentVariation = entry.variation || availableVariations[0] || activeVariant.label;
 
           const isCollapsed = collapsedSlots[slot.id] ?? false;
           const rx = entry.rxSnapshot;
@@ -757,46 +762,10 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                     )}
                   </div>
 
-                  {/* Implement Variant Chips (Engine v2) / Analog Dropdown (Fallback) */}
-                  {familyVariants.length > 0 ? (
+                  {/* Exercise Analog Dropdown and/or Implement Variant Selector */}
+                  {availableVariations.length > 0 && (
                     <div
-                      className="mt-2.5 flex items-center gap-1.5 flex-wrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="text-[10px] font-mono uppercase font-black text-yellow-400 tracking-wider mr-1">
-                        Снаряд:
-                      </span>
-                      {familyVariants.map((v) => {
-                        const isSelected = activeVariant.id === v.id;
-                        return (
-                          <button
-                            key={v.id}
-                            type="button"
-                            onClick={() => {
-                              updateSession((s) => {
-                                const newEntries = [...s.entries];
-                                newEntries[entryIndex] = {
-                                  ...newEntries[entryIndex],
-                                  variantId: v.id,
-                                  variation: v.label,
-                                };
-                                return { ...s, entries: newEntries };
-                              });
-                            }}
-                            className={`px-2.5 py-1 text-xs font-mono font-bold rounded-none uppercase transition-all border cursor-pointer active:scale-95 ${
-                              isSelected
-                                ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]'
-                                : 'bg-black text-neutral-400 border-neutral-800 hover:border-neutral-600 hover:text-white'
-                            }`}
-                          >
-                            {v.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : availableVariations.length > 0 ? (
-                    <div
-                      className="mt-2 flex items-center gap-2"
+                      className="mt-2.5 flex items-center gap-2 flex-wrap"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <span className="text-[10px] font-mono uppercase font-black text-yellow-400 tracking-wider">
@@ -806,13 +775,22 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                         value={currentVariation}
                         onChange={(e) => {
                           const val = e.target.value;
+                          const matchingVar = resolveVariantForEntry(
+                            slot,
+                            { ...entry, variation: val },
+                            family
+                          );
                           updateSession((s) => {
                             const newEntries = [...s.entries];
-                            newEntries[entryIndex] = { ...newEntries[entryIndex], variation: val };
+                            newEntries[entryIndex] = {
+                              ...newEntries[entryIndex],
+                              variation: val,
+                              variantId: matchingVar.id,
+                            };
                             return { ...s, entries: newEntries };
                           });
                         }}
-                        className="bg-neutral-950 text-yellow-400 border border-yellow-500/50 hover:border-yellow-400 text-xs font-mono font-bold px-2 py-1 rounded-none focus:outline-none focus:ring-1 focus:ring-yellow-400 cursor-pointer"
+                        className="bg-neutral-950 text-yellow-400 border border-yellow-500/50 hover:border-yellow-400 text-xs font-mono font-bold px-2 py-1 rounded-none focus:outline-none focus:ring-1 focus:ring-yellow-400 cursor-pointer max-w-[200px] sm:max-w-none truncate"
                       >
                         {availableVariations.map((v) => (
                           <option key={v} value={v} className="bg-neutral-900 text-white font-mono">
@@ -820,8 +798,41 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           </option>
                         ))}
                       </select>
+
+                      {/* Quick Implement Switcher Chips (when family has multiple implements) */}
+                      {familyVariants.length > 1 && (
+                        <div className="flex items-center gap-1 flex-wrap sm:ml-auto">
+                          {familyVariants.map((v) => {
+                            const isSelected = activeVariant.id === v.id;
+                            return (
+                              <button
+                                key={v.id}
+                                type="button"
+                                onClick={() => {
+                                  updateSession((s) => {
+                                    const newEntries = [...s.entries];
+                                    newEntries[entryIndex] = {
+                                      ...newEntries[entryIndex],
+                                      variantId: v.id,
+                                      variation: v.label,
+                                    };
+                                    return { ...s, entries: newEntries };
+                                  });
+                                }}
+                                className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded-none uppercase transition-all border cursor-pointer active:scale-95 ${
+                                  isSelected
+                                    ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                                    : 'bg-black text-neutral-400 border-neutral-800 hover:border-neutral-600 hover:text-white'
+                                }`}
+                              >
+                                {v.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -883,15 +894,16 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                   {/* Suggestion & Fast Action Banner */}
                   {slot.kind !== 'warmup' && !isAdHoc && (
                     <div
-                      className={`mb-4 p-3 rounded-none border transition-all ${
+                      className={`mb-3 p-2.5 rounded-none border transition-all ${
                         isNextSession
-                          ? 'border-yellow-400 bg-neutral-950 shadow-[0_0_10px_rgba(250,204,21,0.15)]'
+                          ? 'border-yellow-400 bg-neutral-950 shadow-[0_0_8px_rgba(250,204,21,0.12)]'
                           : 'border-yellow-500/30 bg-black'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="flex items-center justify-between gap-2">
+                        {/* Compact clickable line that toggles expansion */}
                         <div
-                          className="flex-1 cursor-pointer select-none"
+                          className="flex items-center gap-1.5 cursor-pointer select-none flex-1 min-w-0"
                           onClick={() =>
                             setExpandedSuggestionSlot(
                               expandedSuggestionSlot === slot.id ? null : slot.id
@@ -899,37 +911,135 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           }
                           title="Нажмите для просмотра обоснования, диапазона и альтернатив"
                         >
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
-                            {suggestion ? (
-                              <span className="text-xs sm:text-sm font-black text-white font-mono uppercase">
-                                ПОДСКАЗКА:{' '}
-                                <span className="text-yellow-400 text-base font-black">
-                                  {suggestion.weight} кг
-                                </span>{' '}
-                                {isPerHand && (
-                                  <span className="text-yellow-400/90 text-xs font-bold lowercase">
-                                    (на руку){' '}
-                                  </span>
-                                )}
-                                ×{' '}
-                                {Array.isArray(suggestion.reps)
-                                  ? `${suggestion.reps[0]}-${suggestion.reps[1]}`
-                                  : suggestion.reps}{' '}
-                                повт.
-                              </span>
-                            ) : (
-                              <span className="text-xs text-neutral-400 font-mono">
-                                Нет истории для расчёта e1RM
-                              </span>
-                            )}
+                          <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                          {suggestion ? (
+                            <span className="text-xs font-black text-white font-mono uppercase truncate">
+                              Подсказка:{' '}
+                              <span className="text-yellow-400 font-black">
+                                {suggestion.weight} кг{isPerHand ? ' (на руку)' : ''}
+                              </span>{' '}
+                              ×{' '}
+                              {Array.isArray(suggestion.reps)
+                                ? `${suggestion.reps[0]}-${suggestion.reps[1]}`
+                                : suggestion.reps}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-neutral-400 font-mono truncate">
+                              Нет истории для e1RM
+                            </span>
+                          )}
 
+                          {suggestion?.confidence && (
+                            <span
+                              className={`text-[9px] font-mono font-bold px-1 py-0.2 uppercase border hidden xs:inline-block ${
+                                suggestion.confidence === 'high'
+                                  ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/40'
+                                  : suggestion.confidence === 'med'
+                                  ? 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                                  : 'bg-neutral-900 text-neutral-400 border-neutral-800'
+                              }`}
+                            >
+                              {suggestion.confidence === 'high'
+                                ? 'Высокая'
+                                : suggestion.confidence === 'med'
+                                ? 'Средняя'
+                                : '≈ Низкая'}
+                            </span>
+                          )}
+
+                          <span className="text-yellow-400/80 hover:text-yellow-300 text-[10px] font-mono shrink-0 ml-1">
+                            {expandedSuggestionSlot === slot.id ? '▲ скрыть' : '▼ подробнее'}
+                          </span>
+                        </div>
+
+                        {/* Fast Action Buttons */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {suggestion && (
+                            <button
+                              onClick={handleAcceptSuggestion}
+                              className="px-2.5 py-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-none text-xs font-mono font-black uppercase tracking-wider border border-yellow-400 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                              title="Принять подсказку"
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>Принять</span>
+                            </button>
+                          )}
+
+                          {lastLogged && (
+                            <button
+                              onClick={handleCopyLastTime}
+                              className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 rounded-none text-xs font-mono font-bold uppercase border border-neutral-700 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                              title={
+                                lastLoggedResult?.adapted
+                                  ? `Адаптировано по весу из снаряда «${lastLoggedResult.sourceVariation}»`
+                                  : 'Как в прошлый раз'
+                              }
+                            >
+                              <History className="w-3 h-3 text-yellow-400" />
+                              <span className="hidden sm:inline">Прошлый раз</span>
+                            </button>
+                          )}
+
+                          {!suggestion && (
+                            <button
+                              onClick={() =>
+                                setQuickCalcOpen(quickCalcOpen === slot.id ? null : slot.id)
+                              }
+                              className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 text-yellow-400 border border-yellow-500/50 rounded-none text-xs font-mono font-bold uppercase active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Info className="w-3 h-3" />
+                              <span>1ПМ</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Calc */}
+                      {quickCalcOpen === slot.id && (
+                        <div className="mt-2.5 pt-2.5 border-t border-yellow-500/30 flex flex-wrap items-center gap-2">
+                          <input
+                            type="number"
+                            placeholder="Вес (кг)"
+                            value={quickWeight}
+                            onChange={(e) => setQuickWeight(e.target.value)}
+                            className="w-24 h-8 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Повторы"
+                            value={quickReps}
+                            onChange={(e) => setQuickReps(e.target.value)}
+                            className="w-20 h-8 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
+                          />
+                          <select
+                            value={quickRpe}
+                            onChange={(e) => setQuickRpe(e.target.value)}
+                            className="h-8 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
+                          >
+                            <option value="10">RPE 10</option>
+                            <option value="9">RPE 9</option>
+                            <option value="8">RPE 8</option>
+                            <option value="7">RPE 7</option>
+                          </select>
+                          <button
+                            onClick={handleApplyQuickE1rm}
+                            className="h-8 px-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black uppercase tracking-wider text-xs rounded-none border border-yellow-400 cursor-pointer"
+                          >
+                            Применить
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Expanded Suggestion Panel: Explanation, Range, Alternatives (WARMUPS REMOVED) */}
+                      {expandedSuggestionSlot === slot.id && suggestion && (
+                        <div className="mt-2.5 pt-2.5 border-t border-yellow-500/20 space-y-2.5 font-mono text-xs">
+                          {/* Badges for next session, calibration, check */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {isNextSession && (
                               <span className="text-[10px] font-mono font-black px-1.5 py-0.2 bg-yellow-400 text-black uppercase tracking-wider">
                                 → СЛЕДУЮЩАЯ
                               </span>
                             )}
-                            {/* Badges for calibration, check and confidence */}
                             {(suggestion?.flags?.includes('первая калибровка снаряда') ||
                               (family.k[activeVariant.id]?.n < 3 && activeVariant.id !== family.canonical)) && (
                               <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-amber-400/20 text-amber-300 border border-amber-400/60 uppercase">
@@ -939,23 +1049,6 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                             {(refCheck || suggestion?.flags?.includes('проверь ввод')) && (
                               <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-red-500/20 text-red-400 border border-red-500/60 uppercase">
                                 проверь ввод
-                              </span>
-                            )}
-                            {suggestion?.confidence && (
-                              <span
-                                className={`text-[10px] font-mono font-bold px-1.5 py-0.2 uppercase border ${
-                                  suggestion.confidence === 'high'
-                                    ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/40'
-                                    : suggestion.confidence === 'med'
-                                    ? 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                                    : 'bg-neutral-900 text-neutral-400 border-neutral-800'
-                                }`}
-                              >
-                                {suggestion.confidence === 'high'
-                                  ? 'Высокая'
-                                  : suggestion.confidence === 'med'
-                                  ? 'Средняя'
-                                  : '≈ Низкая'}
                               </span>
                             )}
                             {e1rmAdaptedFrom && (
@@ -968,104 +1061,16 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                             )}
                           </div>
 
-                          {suggestion && (
-                            <p className="text-[11px] text-neutral-400 mt-1 font-mono flex items-center gap-1.5">
-                              <span>{suggestion.explanation}</span>
-                              <span className="text-yellow-400/70 text-[10px] underline">
-                                {expandedSuggestionSlot === slot.id ? 'свернуть ▲' : 'подробнее ▼'}
-                              </span>
+                          {/* Full Explanation */}
+                          {suggestion.explanation && (
+                            <p className="text-[11px] text-neutral-300 bg-neutral-950 p-2 border border-neutral-800 leading-relaxed">
+                              {suggestion.explanation}
                             </p>
                           )}
-                        </div>
 
-                        {/* Fast Action Buttons */}
-                        <div className="flex items-center gap-1.5 shrink-0 mt-1 sm:mt-0">
-                          {suggestion && (
-                            <button
-                              onClick={handleAcceptSuggestion}
-                              className="px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-black rounded-none text-xs font-black uppercase tracking-wider border border-yellow-400 active:scale-95 transition-all flex items-center gap-1 shadow cursor-pointer"
-                              title="Принять подсказку"
-                            >
-                              <Check className="w-4 h-4 stroke-[3]" />
-                              <span>Принять подсказку</span>
-                            </button>
-                          )}
-
-                          {lastLogged && (
-                            <button
-                              onClick={handleCopyLastTime}
-                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 rounded-none text-xs font-mono font-bold uppercase tracking-wider border border-neutral-700 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-                              title={
-                                lastLoggedResult?.adapted
-                                  ? `Адаптировано по весу из снаряда «${lastLoggedResult.sourceVariation}»`
-                                  : 'Как в прошлый раз'
-                              }
-                            >
-                              <History className="w-3.5 h-3.5 text-yellow-400" />
-                              <span>
-                                {lastLoggedResult?.adapted
-                                  ? 'Как в прошлый раз (адаптировано)'
-                                  : 'Как в прошлый раз'}
-                              </span>
-                            </button>
-                          )}
-
-                          {!suggestion && (
-                            <button
-                              onClick={() =>
-                                setQuickCalcOpen(quickCalcOpen === slot.id ? null : slot.id)
-                              }
-                              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-yellow-400 border border-yellow-500/50 rounded-none text-xs font-mono font-bold uppercase active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                              <span>Ввод 1ПМ</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Quick Calc */}
-                      {quickCalcOpen === slot.id && (
-                        <div className="mt-3 pt-3 border-t border-yellow-500/30 flex flex-wrap items-center gap-2">
-                          <input
-                            type="number"
-                            placeholder="Вес (кг)"
-                            value={quickWeight}
-                            onChange={(e) => setQuickWeight(e.target.value)}
-                            className="w-24 h-10 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
-                          />
-                          <input
-                            type="number"
-                            placeholder="Повторы"
-                            value={quickReps}
-                            onChange={(e) => setQuickReps(e.target.value)}
-                            className="w-20 h-10 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
-                          />
-                          <select
-                            value={quickRpe}
-                            onChange={(e) => setQuickRpe(e.target.value)}
-                            className="h-10 px-2 bg-black border border-neutral-700 text-white font-mono text-xs rounded-none focus:border-yellow-400 focus:outline-none"
-                          >
-                            <option value="10">RPE 10</option>
-                            <option value="9">RPE 9</option>
-                            <option value="8">RPE 8</option>
-                            <option value="7">RPE 7</option>
-                          </select>
-                          <button
-                            onClick={handleApplyQuickE1rm}
-                            className="h-10 px-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black uppercase tracking-wider text-xs rounded-none border border-yellow-400 cursor-pointer"
-                          >
-                            Применить
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Expanded Suggestion Panel: Explanation, Range, Alternatives, Warmups */}
-                      {expandedSuggestionSlot === slot.id && suggestion && (
-                        <div className="mt-3 pt-3 border-t border-yellow-500/30 space-y-3 font-mono text-xs">
                           {/* Range and Confidence */}
                           {suggestion.range && (
-                            <div className="flex items-center justify-between bg-black p-2.5 border border-yellow-500/40">
+                            <div className="flex items-center justify-between bg-black p-2 border border-yellow-500/40">
                               <span className="text-neutral-400 uppercase text-[10px] font-bold">
                                 Рекомендуемый диапазон веса:
                               </span>
@@ -1079,11 +1084,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
                           {/* Step-by-Step Explanation */}
                           {suggestion.explain && suggestion.explain.length > 0 && (
-                            <div className="bg-black p-2.5 border border-neutral-800">
-                              <div className="text-[10px] font-black uppercase text-yellow-400 mb-1.5 tracking-wider">
+                            <div className="bg-black p-2 border border-neutral-800">
+                              <div className="text-[10px] font-black uppercase text-yellow-400 mb-1 tracking-wider">
                                 Детальный расчёт подсказки:
                               </div>
-                              <div className="space-y-1">
+                              <div className="space-y-0.5">
                                 {suggestion.explain.map((step, sIdx) => (
                                   <div
                                     key={sIdx}
@@ -1099,7 +1104,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
                           {/* Alternatives table */}
                           {suggestion.alternatives && suggestion.alternatives.length > 0 && (
-                            <div className="bg-black p-2.5 border border-neutral-800">
+                            <div className="bg-black p-2 border border-neutral-800">
                               <div className="text-[10px] font-black uppercase text-yellow-400 mb-1.5 tracking-wider">
                                 Если делаешь с другим снарядом:
                               </div>
@@ -1129,55 +1134,6 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                     </span>
                                   </button>
                                 ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Warmup ladder (main lifts) */}
-                          {suggestion.warmups && suggestion.warmups.length > 0 && (
-                            <div className="bg-black p-2.5 border border-yellow-500/40">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="text-[10px] font-black uppercase text-yellow-400 tracking-wider">
-                                  Разминочная лесенка (Main):
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    updateSession((s) => {
-                                      const newEntries = [...s.entries];
-                                      const curSets = [...newEntries[entryIndex].sets];
-                                      const newWarmupSets: SetLog[] = suggestion.warmups!.map((w) => ({
-                                        type: 'warmup',
-                                        weight: w.weight,
-                                        reps: w.reps,
-                                        done: false,
-                                      }));
-                                      newEntries[entryIndex] = {
-                                        ...newEntries[entryIndex],
-                                        sets: [
-                                          ...newWarmupSets,
-                                          ...curSets.filter((st) => st.type !== 'warmup'),
-                                        ],
-                                      };
-                                      return { ...s, entries: newEntries };
-                                    });
-                                  }}
-                                  className="text-[9px] uppercase font-mono font-black px-2 py-0.5 bg-neutral-900 hover:bg-yellow-400 hover:text-black text-yellow-400 border border-yellow-500/50 transition-colors cursor-pointer"
-                                >
-                                  + Добавить в таблицу
-                                </button>
-                              </div>
-                              <div className="grid grid-cols-4 gap-1 text-center">
-                                {suggestion.warmups.map((w, wIdx) => {
-                                  const pctLabel = [40, 60, 75, 90][wIdx] ?? 50;
-                                  return (
-                                    <div key={wIdx} className="bg-neutral-950 border border-neutral-800 p-1.5">
-                                      <div className="text-[9px] text-neutral-500 font-bold">{pctLabel}%</div>
-                                      <div className="text-xs font-black text-white">{w.weight} кг</div>
-                                      <div className="text-[10px] text-neutral-400">× {w.reps}</div>
-                                    </div>
-                                  );
-                                })}
                               </div>
                             </div>
                           )}

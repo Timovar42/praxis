@@ -77,6 +77,37 @@ export function learnK(
   };
 }
 
+export const LIFT_TO_FAMILY_MAP: Record<string, string> = {
+  bench: 'bench',
+  incline: 'incline',
+  curl: 'biceps',
+  hammer: 'biceps',
+  biceps: 'biceps',
+  tbar: 'row',
+  hammer_row: 'row',
+  row: 'row',
+  squat: 'squat',
+  deadlift: 'deadlift',
+  rdl: 'rdl',
+  leg_press: 'legpress',
+  legpress: 'legpress',
+  hack: 'hack',
+  leg_ext: 'legext',
+  legext: 'legext',
+  leg_curl: 'legcurl',
+  legcurl: 'legcurl',
+  side_delt: 'latraise',
+  sdelts: 'latraise',
+  latraise: 'latraise',
+  tri_cable: 'triceps',
+  oh_ext: 'triceps',
+  triceps: 'triceps',
+  v_pulldown: 'latpulldown',
+  latpulldown: 'latpulldown',
+  shrugs: 'shrug',
+  shrug: 'shrug',
+};
+
 /**
  * Resolves or creates a family for a given slot.
  */
@@ -84,13 +115,21 @@ export function resolveFamilyForSlot(
   slot: Slot,
   allFamilies: Record<string, Family> = INITIAL_FAMILIES
 ): Family {
-  const familyId = slot.familyId || slot.lift;
+  const mappedFamilyId = LIFT_TO_FAMILY_MAP[slot.lift] || LIFT_TO_FAMILY_MAP[slot.id];
+  const familyId = slot.familyId || mappedFamilyId || slot.lift;
   if (familyId && allFamilies[familyId]) {
     return allFamilies[familyId];
   }
   // Fallback by lift or name
+  const normLift = (slot.lift || '').toLowerCase();
+  const normName = (slot.name || '').toLowerCase();
   for (const [key, fam] of Object.entries(allFamilies)) {
-    if (slot.lift === key || slot.id.startsWith(key)) {
+    if (
+      slot.lift === key ||
+      slot.id.startsWith(key) ||
+      normName.includes(fam.name.toLowerCase()) ||
+      fam.name.toLowerCase().includes(normLift)
+    ) {
       return fam;
     }
   }
@@ -143,6 +182,41 @@ export function resolveVariantForEntry(
           return v;
         }
       }
+    }
+
+    // Keyword heuristics for analogues
+    if (varString.includes('гантел')) {
+      const dbId = Object.keys(fam.k).find(
+        (id) => id.includes('dumbbell') || INITIAL_VARIANTS[id]?.implement === 'dumbbell'
+      );
+      if (dbId && INITIAL_VARIANTS[dbId]) return INITIAL_VARIANTS[dbId];
+    }
+    if (varString.includes('смит')) {
+      const smithId = Object.keys(fam.k).find(
+        (id) => id.includes('smith') || INITIAL_VARIANTS[id]?.implement === 'smith'
+      );
+      if (smithId && INITIAL_VARIANTS[smithId]) return INITIAL_VARIANTS[smithId];
+    }
+    if (varString.includes('кроссовер') || varString.includes('блок')) {
+      const cableId = Object.keys(fam.k).find(
+        (id) => id.includes('cable') || INITIAL_VARIANTS[id]?.implement === 'cable'
+      );
+      if (cableId && INITIAL_VARIANTS[cableId]) return INITIAL_VARIANTS[cableId];
+    }
+    if (varString.includes('хаммер') || varString.includes('тренажер') || varString.includes('тренажёр')) {
+      const machId = Object.keys(fam.k).find(
+        (id) =>
+          id.includes('machine') ||
+          id.includes('hammer') ||
+          INITIAL_VARIANTS[id]?.implement === 'machine'
+      );
+      if (machId && INITIAL_VARIANTS[machId]) return INITIAL_VARIANTS[machId];
+    }
+    if (varString.includes('гриф') || varString.includes('штан')) {
+      const bbId = Object.keys(fam.k).find(
+        (id) => id.includes('ezbar') || id.includes('barbell')
+      );
+      if (bbId && INITIAL_VARIANTS[bbId]) return INITIAL_VARIANTS[bbId];
     }
   }
 
