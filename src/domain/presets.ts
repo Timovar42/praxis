@@ -200,7 +200,7 @@ export const FULL_BODY_PRESET: Program = {
       kind: 'isolation',
       inc: 1.0,
       muscles: { sdelts: 1 },
-      variations: ['с гантелями', 'в кроссовере'],
+      variations: ['с гантелями', 'в кроссовере', 'шраги со штангой'],
       rx: buildRxForPeriodization('fixed', 'isolation'),
     },
     {
@@ -499,7 +499,7 @@ export const UPPER_LOWER_PRESET: Program = {
       kind: 'isolation',
       inc: 1.0,
       muscles: { sdelts: 1 },
-      variations: ['с гантелями', 'в кроссовере'],
+      variations: ['с гантелями', 'в кроссовере', 'шраги со штангой'],
       rx: buildRxForPeriodization('wave', 'isolation'),
     },
     {
@@ -638,7 +638,7 @@ export const PPL_PRESET: Program = {
       kind: 'isolation',
       inc: 1.0,
       muscles: { sdelts: 1 },
-      variations: ['с гантелями', 'в кроссовере'],
+      variations: ['с гантелями', 'в кроссовере', 'шраги со штангой'],
       rx: buildRxForPeriodization('wave', 'isolation'),
     },
     {

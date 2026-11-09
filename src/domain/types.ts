@@ -24,6 +24,7 @@ export interface Slot {
   muscles: Partial<Record<Muscle, number>>; // 1 = direct, 0.5 = indirect
   rx: Record<Zone, Rx>;
   variations?: string[]; // available equipment/analog alternatives
+  superset?: boolean; // part of a superset
 }
 
 export interface Program {
@@ -57,6 +58,7 @@ export interface ExerciseLog {
   skipped?: boolean;
   variation?: string; // selected analog (e.g. "в гакке", "со штангой")
   customName?: string; // custom exercise name if added ad-hoc
+  superset?: boolean; // whether this exercise is marked as part of a superset (adjacent exercises executed with no rest)
 }
 
 export interface CardioSession {

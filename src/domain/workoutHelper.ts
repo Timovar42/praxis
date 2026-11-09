@@ -114,6 +114,7 @@ export function getOrCreateSessionForDate(
         variant: defaultVariant,
         rxSnapshot: rx,
         variation: slot.variations?.[0],
+        superset: slot.superset ?? false,
         sets: Array.from({ length: setsCount }, () => ({
           type: 'work',
           done: false,

@@ -42,6 +42,7 @@ import {
   SlidersHorizontal,
   X,
   RotateCcw,
+  Zap,
 } from 'lucide-react';
 
 interface WorkoutScreenProps {
@@ -383,6 +384,13 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
           const baseSlot = program.slots.find((s) => s.id === entry.slotId);
           const isAdHoc = !baseSlot || entry.slotId.startsWith('adhoc-');
 
+          // Check adjacent superset status
+          const prevEntry = entryIndex > 0 ? activeSession.entries[entryIndex - 1] : null;
+          const nextEntry = entryIndex < activeSession.entries.length - 1 ? activeSession.entries[entryIndex + 1] : null;
+          const isSupersetWithPrev = Boolean(entry.superset && prevEntry?.superset);
+          const isSupersetWithNext = Boolean(entry.superset && nextEntry?.superset);
+          const isPartOfActiveSuperset = isSupersetWithPrev || isSupersetWithNext;
+
           const slot: Slot = baseSlot ?? {
             id: entry.slotId,
             lift: entry.customName ? `adhoc_${entry.slotId}` : 'adhoc',
@@ -515,85 +523,135 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
           };
 
           return (
-            <div
-              key={`${slot.id}-${entryIndex}`}
-              className={`border-2 rounded-none bg-black transition-colors ${
-                entry.skipped
-                  ? 'border-neutral-800 opacity-50'
-                  : 'border-yellow-500/40 hover:border-yellow-400'
-              }`}
-            >
-              {/* Day Edit Mode Controls Header */}
-              {isEditingDay && (
-                <div className="bg-neutral-950 px-3 py-1.5 border-b border-yellow-500/40 flex items-center justify-between text-xs font-mono">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black text-black bg-yellow-400 px-1.5 py-0.2 uppercase">
-                      № {entryIndex + 1}
-                    </span>
-                    <button
-                      onClick={() => handleMoveEntry(entryIndex, 'up')}
-                      disabled={entryIndex === 0}
-                      className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
-                      title="Переместить выше"
-                    >
-                      <ArrowUp className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleMoveEntry(entryIndex, 'down')}
-                      disabled={entryIndex === activeSession.entries.length - 1}
-                      className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
-                      title="Переместить ниже"
-                    >
-                      <ArrowDown className="w-4 h-4" />
-                    </button>
+            <React.Fragment key={`${slot.id}-${entryIndex}`}>
+              {isSupersetWithPrev && (
+                <div className="flex items-center justify-center -my-2 relative z-10">
+                  <div className="bg-amber-400 text-black px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-widest flex items-center gap-1.5 shadow-[0_0_12px_rgba(251,191,36,0.5)] border border-amber-300">
+                    <Zap className="w-3.5 h-3.5 fill-black" />
+                    <span>СУПЕРСЕТ · ЧЕРЕДОВАНИЕ БЕЗ ОТДЫХА</span>
+                    <Zap className="w-3.5 h-3.5 fill-black" />
                   </div>
-
-                  <button
-                    onClick={() => handleDeleteEntry(entryIndex, slot.name)}
-                    className="text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1 px-2 py-0.5 border border-red-500/40 bg-black"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Удалить</span>
-                  </button>
                 </div>
               )}
+              <div
+                className={`border-2 rounded-none bg-black transition-colors ${
+                  entry.skipped
+                    ? 'border-neutral-800 opacity-50'
+                    : isPartOfActiveSuperset
+                    ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.2)]'
+                    : 'border-yellow-500/40 hover:border-yellow-400'
+                }`}
+              >
+                {/* Day Edit Mode Controls Header */}
+                {isEditingDay && (
+                  <div className="bg-neutral-950 px-3 py-1.5 border-b border-yellow-500/40 flex items-center justify-between text-xs font-mono">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-black text-black bg-yellow-400 px-1.5 py-0.2 uppercase">
+                        № {entryIndex + 1}
+                      </span>
+                      <button
+                        onClick={() => handleMoveEntry(entryIndex, 'up')}
+                        disabled={entryIndex === 0}
+                        className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
+                        title="Переместить выше"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveEntry(entryIndex, 'down')}
+                        disabled={entryIndex === activeSession.entries.length - 1}
+                        className="p-1 text-yellow-400 hover:text-white disabled:opacity-30 disabled:hover:text-yellow-400"
+                        title="Переместить ниже"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                    </div>
 
-              {/* Exercise Header */}
-              <div className="p-3.5 flex items-start justify-between gap-2">
-                <div
-                  className="flex-1 cursor-pointer select-none"
-                  onClick={() => toggleSlotCollapse(slot.id)}
-                >
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="font-black text-base sm:text-lg text-white uppercase tracking-tight font-mono">
-                      {slot.name}
-                    </span>
-                    {slot.kind === 'main' && (
-                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 bg-yellow-400 text-black">
-                        База
-                      </span>
-                    )}
-                    {slot.kind === 'warmup' && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 bg-neutral-800 text-neutral-300">
-                        Разминка
-                      </span>
-                    )}
-                    {slot.optional && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 border border-yellow-500/50 text-yellow-400">
-                        Опция
-                      </span>
-                    )}
-                    {isAdHoc && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 bg-neutral-900 border border-yellow-500/60 text-yellow-400">
-                        Спец
-                      </span>
-                    )}
-                    {entry.skipped && (
-                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 bg-neutral-900 text-neutral-400 border border-neutral-700">
-                        Пропущено
-                      </span>
-                    )}
+                    <button
+                      onClick={() => handleDeleteEntry(entryIndex, slot.name)}
+                      className="text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1 px-2 py-0.5 border border-red-500/40 bg-black"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Удалить</span>
+                    </button>
                   </div>
+                )}
+
+                {/* Exercise Header */}
+                <div className="p-3.5 flex items-start justify-between gap-2">
+                  <div
+                    className="flex-1 cursor-pointer select-none"
+                    onClick={() => toggleSlotCollapse(slot.id)}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-black text-base sm:text-lg text-white uppercase tracking-tight font-mono">
+                        {slot.name}
+                      </span>
+                      {slot.kind === 'main' && (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 bg-yellow-400 text-black">
+                          База
+                        </span>
+                      )}
+                      {slot.kind === 'warmup' && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 bg-neutral-800 text-neutral-300">
+                          Разминка
+                        </span>
+                      )}
+                      {slot.optional && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 border border-yellow-500/50 text-yellow-400">
+                          Опция
+                        </span>
+                      )}
+                      {isAdHoc && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 bg-neutral-900 border border-yellow-500/60 text-yellow-400">
+                          Спец
+                        </span>
+                      )}
+                      {entry.skipped && (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 bg-neutral-900 text-neutral-400 border border-neutral-700">
+                          Пропущено
+                        </span>
+                      )}
+
+                      {/* Superset Toggle Button in Exercise Type Row */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateSession((s) => {
+                            const newEntries = [...s.entries];
+                            newEntries[entryIndex] = {
+                              ...newEntries[entryIndex],
+                              superset: !newEntries[entryIndex].superset,
+                            };
+                            return { ...s, entries: newEntries };
+                          });
+                        }}
+                        className={`text-[9.5px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-none border transition-all flex items-center gap-1 cursor-pointer active:scale-95 ${
+                          entry.superset
+                            ? isPartOfActiveSuperset
+                              ? 'bg-amber-400 text-black border-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]'
+                              : 'bg-amber-400/20 text-amber-300 border-amber-400/80 animate-pulse'
+                            : 'bg-black text-neutral-400 border-neutral-800 hover:border-amber-400 hover:text-amber-300'
+                        }`}
+                        title={
+                          entry.superset
+                            ? isPartOfActiveSuperset
+                              ? 'Активный суперсет: чередование без отдыха с соседним упражнением'
+                              : 'Суперсет включён: выберите суперсет в соседнем упражнении для связи'
+                            : 'Отметить упражнение как суперсет с соседним'
+                        }
+                      >
+                        <Zap className={`w-3 h-3 ${entry.superset ? 'fill-current' : ''}`} />
+                        <span>
+                          {entry.superset
+                            ? isPartOfActiveSuperset
+                              ? '⚡ СУПЕРСЕТ'
+                              : '⚡ СУПЕРСЕТ (ЖДЁТ ПАРУ)'
+                            : '+ Суперсет'}
+                        </span>
+                      </button>
+                    </div>
 
                   {/* Prescription */}
                   <div className="text-xs text-neutral-400 font-mono flex items-center gap-2 flex-wrap">
@@ -876,10 +934,11 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
 
                   {/* Sets Table - Mobile Optimized with >= 48px touch targets */}
                   <div className="space-y-1.5">
-                    <div className="grid grid-cols-12 gap-1.5 text-[10px] font-mono font-black text-neutral-400 px-1 uppercase tracking-widest">
+                    <div className="grid grid-cols-12 gap-1 sm:gap-1.5 text-[10px] font-mono font-black text-neutral-400 px-1 uppercase tracking-widest">
                       <div className="col-span-2 text-center">№ / ТИП</div>
-                      <div className="col-span-4 text-center">ВЕС (КГ)</div>
-                      <div className="col-span-3 text-center">ПОВТ</div>
+                      <div className="col-span-3 text-center">ВЕС (КГ)</div>
+                      <div className="col-span-2 text-center">ПОВТ</div>
+                      <div className="col-span-2 text-center">RPE</div>
                       <div className="col-span-2 text-center">✓</div>
                       <div className="col-span-1 text-center"></div>
                     </div>
@@ -893,7 +952,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                       return (
                         <div
                           key={setIdx}
-                          className={`grid grid-cols-12 gap-1.5 items-center p-1 rounded-none border transition-colors ${
+                          className={`grid grid-cols-12 gap-1 sm:gap-1.5 items-center p-1 rounded-none border transition-colors ${
                             set.done
                               ? 'bg-neutral-950 border-yellow-400/80 shadow-[0_0_6px_rgba(250,204,21,0.15)]'
                               : 'bg-black border-neutral-800 hover:border-neutral-700'
@@ -927,7 +986,7 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                           </div>
 
                           {/* Weight input - 48px height, strict corners */}
-                          <div className="col-span-4">
+                          <div className="col-span-3">
                             <input
                               type="number"
                               step="any"
@@ -944,12 +1003,12 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                   return { ...s, entries: newEntries };
                                 });
                               }}
-                              className="w-full h-12 px-2 text-center bg-black border border-neutral-700 rounded-none text-base font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
+                              className="w-full h-12 px-1 text-center bg-black border border-neutral-700 rounded-none text-sm sm:text-base font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
                             />
                           </div>
 
                           {/* Reps input - 48px height */}
-                          <div className="col-span-3">
+                          <div className="col-span-2">
                             <input
                               type="number"
                               inputMode="numeric"
@@ -965,8 +1024,43 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                                   return { ...s, entries: newEntries };
                                 });
                               }}
-                              className="w-full h-12 px-2 text-center bg-black border border-neutral-700 rounded-none text-base font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
+                              className="w-full h-12 px-1 text-center bg-black border border-neutral-700 rounded-none text-sm sm:text-base font-black font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors"
                             />
+                          </div>
+
+                          {/* Per-set RPE select - 48px height */}
+                          <div className="col-span-2">
+                            <select
+                              value={set.rpe !== undefined ? set.rpe.toString() : ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                updateSession((s) => {
+                                  const newEntries = [...s.entries];
+                                  const curSets = [...newEntries[entryIndex].sets];
+                                  curSets[setIdx] = { ...curSets[setIdx], rpe: val };
+                                  newEntries[entryIndex] = { ...newEntries[entryIndex], sets: curSets };
+                                  return { ...s, entries: newEntries };
+                                });
+                              }}
+                              aria-label="RPE подхода"
+                              className="w-full h-12 px-0.5 text-center bg-black border border-neutral-700 rounded-none text-xs sm:text-sm font-black font-mono text-yellow-400 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition-colors cursor-pointer"
+                              style={{ textAlignLast: 'center' }}
+                            >
+                              <option value="" className="bg-black text-neutral-500">
+                                {entry.rpe ? `(${entry.rpe})` : '—'}
+                              </option>
+                              <option value="10" className="bg-black text-white font-mono">10 (Отказ)</option>
+                              <option value="9.5" className="bg-black text-white font-mono">9.5</option>
+                              <option value="9" className="bg-black text-white font-mono">9 (1 в зап)</option>
+                              <option value="8.5" className="bg-black text-white font-mono">8.5</option>
+                              <option value="8" className="bg-black text-white font-mono">8 (2 в зап)</option>
+                              <option value="7.5" className="bg-black text-white font-mono">7.5</option>
+                              <option value="7" className="bg-black text-white font-mono">7 (3 в зап)</option>
+                              <option value="6.5" className="bg-black text-white font-mono">6.5</option>
+                              <option value="6" className="bg-black text-white font-mono">6 (4 в зап)</option>
+                              <option value="5.5" className="bg-black text-white font-mono">5.5</option>
+                              <option value="5" className="bg-black text-white font-mono">5 (≤ 5)</option>
+                            </select>
                           </div>
 
                           {/* Done Checkbox button - 48px touch target */}
@@ -1102,9 +1196,10 @@ export const WorkoutScreen: React.FC<WorkoutScreenProps> = ({
                 </div>
               )}
             </div>
-          );
-        })}
-      </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
 
       {/* Quick Button to Add Exercise */}
       <div className="mt-4 flex gap-2">
