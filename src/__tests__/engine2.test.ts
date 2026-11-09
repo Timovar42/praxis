@@ -8,9 +8,11 @@ import {
   calculateTrend,
   getCalibratedE1RM,
 } from '../domain/engine2/estimate';
-import { DEFAULT_FAMILIES, DEFAULT_VARIANTS } from '../domain/engine2/families';
+import { DEFAULT_FAMILIES, DEFAULT_VARIANTS, learnK } from '../domain/engine2/families';
 import { migrateAllV1toV2 } from '../domain/engine2/migration';
-import type { Session, Program, Slot, ExerciseLog } from '../domain/types';
+import { suggestV2 } from '../domain/engine2/suggest';
+import { calculateSetTonnage, calculateEntryTonnage } from '../domain/engine2/tonnage';
+import type { Session, Program, Slot, ExerciseLog, Bin, Estimate, KPrior } from '../domain/types';
 
 describe('Engine v2: Оценка силы и модель данных', () => {
   describe('2.1 Таблица pct(n) и интерполяция', () => {
@@ -74,8 +76,8 @@ describe('Engine v2: Оценка силы и модель данных', () => 
         sets: [],
       };
 
-      // 36 кг гантели x 8 @ RPE 8 => canonicalLoad = 36 / 0.36 = 100 кг => z = 135.3
-      const obs = calculateSetZ(36, 8, 8, dummyEntry, dbVariant, family);
+      // 38 кг гантели x 8 @ RPE 8 => canonicalLoad = 38 / 0.38 = 100 кг => z = 135.3
+      const obs = calculateSetZ(38, 8, 8, dummyEntry, dbVariant, family);
       expect(obs).not.toBeNull();
       expect(obs?.z).toBeCloseTo(135.3, 1);
     });
@@ -457,6 +459,217 @@ describe('Engine v2: Оценка силы и модель данных', () => 
       expect(estimates.bench.all.n).toBe(2);
       expect(estimates.tri_ext).toBeDefined();
       expect(estimates.tri_ext.all.n).toBe(1);
+    });
+  });
+
+  describe('ЭТАП 3 и 4: Семьи, обучение k и подсказки suggestV2', () => {
+    it('Жим лёжа штанга, mu_canon 135.3, зона "str" 3 x 3, RPE 8-9 (t = 8.5), cap 0.90: выбирается 117.5', () => {
+      const slot: Slot = {
+        id: 'bench',
+        lift: 'bench',
+        name: 'Жим лёжа',
+        day: 'tue',
+        kind: 'main',
+        inc: 2.5,
+        muscles: { chest: 1 },
+        rx: {
+          vol: { opts: [[4, 8]] },
+          mid: { opts: [[4, 5]] },
+          str: { opts: [[3, 3]], rpe: [8, 9], cap: 0.9 },
+        },
+      };
+
+      const estimates: Record<Bin, Estimate> = {
+        all: { familyId: 'bench', bin: 'all', mu: 135.3, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+        low: { familyId: 'bench', bin: 'low', mu: 135.3, p: 9, n: 3, updatedAt: '2026-11-02', hist: [] },
+        mid: { familyId: 'bench', bin: 'mid', mu: 135.3, p: 9, n: 2, updatedAt: '2026-11-02', hist: [] },
+        high: { familyId: 'bench', bin: 'high', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+      };
+
+      const suggestion = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'str',
+        selectedVariantId: 'bench_barbell',
+        settings: { rpeMode: 'mid' },
+      });
+
+      // w_rpe ≈ 118.7, потолок ≈ 121.8, кандидаты 117.5 и 120 дают ничью в пределах 0.05 => 117.5
+      expect(suggestion.weight).toBe(117.5);
+      expect(suggestion.sets).toBe(3);
+      expect(suggestion.reps).toBe(3);
+      expect(suggestion.targetRpe).toBe(8.5);
+      expect(suggestion.isPerHand).toBe(false);
+    });
+
+    it('Те же данные, вариант dumbbell на руку (k 0.38), зона "mid" 4 x 5, RPE 8, cap 0.80: ожидается 40', () => {
+      const slot: Slot = {
+        id: 'bench',
+        lift: 'bench',
+        name: 'Жим лёжа',
+        day: 'tue',
+        kind: 'main',
+        inc: 2.5,
+        muscles: { chest: 1 },
+        rx: {
+          vol: { opts: [[4, 8]] },
+          mid: { opts: [[4, 5]], rpe: [8, 8], cap: 0.8 },
+          str: { opts: [[3, 3]], rpe: [8, 9], cap: 0.9 },
+        },
+      };
+
+      const estimates: Record<Bin, Estimate> = {
+        all: { familyId: 'bench', bin: 'all', mu: 135.3, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+        low: { familyId: 'bench', bin: 'low', mu: 135.3, p: 9, n: 2, updatedAt: '2026-11-02', hist: [] },
+        mid: { familyId: 'bench', bin: 'mid', mu: 135.3, p: 9, n: 3, updatedAt: '2026-11-02', hist: [] },
+        high: { familyId: 'bench', bin: 'high', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+      };
+
+      const suggestion = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'mid',
+        selectedVariantId: 'bench_dumbbell',
+        settings: { rpeMode: 'mid' },
+      });
+
+      // mu_v ≈ 51.4, w_rpe ≈ 41.7, потолок ≈ 41.1, кандидат 42 отсекается потолком => 40
+      expect(suggestion.weight).toBe(40);
+      expect(suggestion.isPerHand).toBe(true);
+    });
+
+    it('Первые две сессии на гантелях только калибруют k и не меняют mu семьи; с третьей mu обновляется', () => {
+      let currentK: KPrior = { value: 0.38, conf: 'low', n: 1 };
+      const priorKValue = 0.38;
+      const muCanon = 135.3;
+
+      // 1. Первая сессия на гантелях (n = 1 < 3)
+      const res1 = learnK(currentK, priorKValue, 52, muCanon);
+      expect(res1.shouldUpdateMu).toBe(false); // Не меняет mu семьи
+      expect(res1.k.n).toBe(2);
+      currentK = res1.k;
+
+      // 2. Вторая сессия на гантелях (n = 2 < 3)
+      const res2 = learnK(currentK, priorKValue, 52, muCanon);
+      expect(res2.shouldUpdateMu).toBe(false); // Не меняет mu семьи
+      expect(res2.k.n).toBe(3);
+      currentK = res2.k;
+
+      // 3. Третья сессия на гантелях (n = 3 >= 3)
+      const res3 = learnK(currentK, priorKValue, 52, muCanon);
+      expect(res3.shouldUpdateMu).toBe(true); // С третьей сессии mu обновляется!
+    });
+
+    it('Режим conservative даёт вес не выше, чем normal', () => {
+      const slot: Slot = {
+        id: 'bench',
+        lift: 'bench',
+        name: 'Жим лёжа',
+        day: 'tue',
+        kind: 'main',
+        inc: 2.5,
+        muscles: { chest: 1 },
+        rx: {
+          vol: { opts: [[4, 8]] },
+          mid: { opts: [[4, 8]] },
+          str: { opts: [[3, 5]], rpe: [8, 8] },
+        },
+      };
+
+      const estimates: Record<Bin, Estimate> = {
+        all: { familyId: 'bench', bin: 'all', mu: 120, p: 25, n: 5, updatedAt: '2026-11-02', hist: [] }, // sd = 5
+        low: { familyId: 'bench', bin: 'low', mu: 120, p: 25, n: 5, updatedAt: '2026-11-02', hist: [] },
+        mid: { familyId: 'bench', bin: 'mid', mu: 120, p: 25, n: 5, updatedAt: '2026-11-02', hist: [] },
+        high: { familyId: 'bench', bin: 'high', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+      };
+
+      const suggNormal = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'str',
+        selectedVariantId: 'bench_barbell',
+        settings: { mode: 'normal' },
+      });
+
+      const suggConservative = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'str',
+        selectedVariantId: 'bench_barbell',
+        settings: { mode: 'conservative' },
+      });
+
+      expect(suggConservative.weight).toBeLessThanOrEqual(suggNormal.weight);
+    });
+
+    it('Переключение слота «жим в наклоне» со штанги на гантели меняет вес и единицы («на руку»), а тоннаж считается по 2 x на руку', () => {
+      const slot: Slot = {
+        id: 'incline_press',
+        lift: 'incline_press',
+        name: 'Жим в наклоне',
+        day: 'tue',
+        kind: 'compound',
+        inc: 2.5,
+        muscles: { chest: 1 },
+        rx: {
+          vol: { opts: [[3, 8]] },
+          mid: { opts: [[3, 8]] },
+          str: { opts: [[3, 8]] },
+        },
+      };
+
+      const estimates: Record<Bin, Estimate> = {
+        all: { familyId: 'incline_press', bin: 'all', mu: 100, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+        low: { familyId: 'incline_press', bin: 'low', mu: 100, p: 9, n: 2, updatedAt: '2026-11-02', hist: [] },
+        mid: { familyId: 'incline_press', bin: 'mid', mu: 100, p: 9, n: 5, updatedAt: '2026-11-02', hist: [] },
+        high: { familyId: 'incline_press', bin: 'high', mu: 0, p: 0, n: 0, updatedAt: '', hist: [] },
+      };
+
+      const suggBarbell = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'mid',
+        selectedVariantId: 'incline_barbell',
+      });
+
+      const suggDumbbell = suggestV2({
+        slot,
+        history: [],
+        estimates,
+        zone: 'mid',
+        selectedVariantId: 'incline_dumbbell',
+      });
+
+      expect(suggBarbell.isPerHand).toBe(false);
+      expect(suggDumbbell.isPerHand).toBe(true);
+      expect(suggDumbbell.weight).toBeLessThan(suggBarbell.weight);
+
+      // Tonnage calculation: 2 x reps x weight for dumbbells
+      const dbSet = { type: 'work' as const, done: true, weight: 30, reps: 8 };
+      const barbellSet = { type: 'work' as const, done: true, weight: 80, reps: 8 };
+
+      const dbTonnage = calculateSetTonnage(dbSet, true);
+      const barbellTonnage = calculateSetTonnage(barbellSet, false);
+
+      expect(dbTonnage).toBe(30 * 2 * 8); // 480 kg
+      expect(barbellTonnage).toBe(80 * 1 * 8); // 640 kg
+
+      const dbEntry: ExerciseLog = {
+        slotId: 'incline_press',
+        variantId: 'incline_dumbbell',
+        zone: 'mid',
+        variant: 0,
+        rxSnapshot: { opts: [[3, 8]] },
+        sets: [dbSet, dbSet, dbSet],
+      };
+
+      const entryTonnage = calculateEntryTonnage(dbEntry, slot);
+      expect(entryTonnage).toBe(3 * (30 * 2 * 8)); // 1440 kg
     });
   });
 });

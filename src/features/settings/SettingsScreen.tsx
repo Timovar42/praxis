@@ -3,6 +3,7 @@ import { useAppStore } from '../../store';
 import { dexieRepo } from '../../repo/dexieRepo';
 import { seedProgram } from '../../data/seedProgram';
 import { ProgramEditorScreen } from '../program-editor/ProgramEditorScreen';
+import { CalibrationScreen } from '../calibration/CalibrationScreen';
 import { PERIODIZATION_MODELS } from '../../domain/presets';
 import type { Settings } from '../../domain/types';
 import {
@@ -15,6 +16,8 @@ import {
   ShieldCheck,
   Layers,
   SlidersHorizontal,
+  Flame,
+  Zap,
 } from 'lucide-react';
 
 export const SettingsScreen: React.FC = () => {
@@ -22,11 +25,16 @@ export const SettingsScreen: React.FC = () => {
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showProgramEditor, setShowProgramEditor] = useState(false);
+  const [showCalibration, setShowCalibration] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!settings) {
     return <div className="p-8 text-center text-neutral-400 font-mono">Загрузка настроек...</div>;
+  }
+
+  if (showCalibration) {
+    return <CalibrationScreen onClose={() => setShowCalibration(false)} />;
   }
 
   const handleUpdate = async (patch: Partial<Settings>) => {
@@ -160,14 +168,134 @@ export const SettingsScreen: React.FC = () => {
 
         {/* Progression Algorithm Settings */}
         <div className="bg-black border-2 border-yellow-400 rounded-none p-4 shadow-[0_0_12px_rgba(250,204,21,0.15)]">
-          <h2 className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-yellow-400" />
-            <span>Алгоритм подсказок</span>
-          </h2>
+          <div className="flex items-center justify-between mb-3 border-b border-yellow-500/30 pb-2">
+            <h2 className="text-xs font-mono font-black text-yellow-400 uppercase tracking-widest flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-yellow-400" />
+              <span>Движок подсказок и калибровка</span>
+            </h2>
+            <button
+              onClick={() => setShowCalibration(true)}
+              className="px-2.5 py-1 bg-yellow-400 text-black font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1 hover:bg-yellow-300 transition-colors shadow-[0_0_8px_rgba(250,204,21,0.3)]"
+            >
+              <Zap className="w-3.5 h-3.5 fill-black" />
+              <span>Калибровка снарядов</span>
+            </button>
+          </div>
 
           <div className="space-y-4">
-            {/* RPE Mode */}
+            {/* Engine Selection: v1 vs v2 */}
             <div>
+              <label className="block text-xs font-mono uppercase text-white font-bold mb-1">
+                Версия алгоритма (Engine)
+              </label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {[
+                  {
+                    id: 'v1',
+                    label: 'ENGINE V1 (КЛАССИКА)',
+                    desc: 'Эпли/Бжицки, срез +5%, базовая адаптация',
+                  },
+                  {
+                    id: 'v2',
+                    label: 'ENGINE V2 (КАЛМАН + СНАРЯДЫ)',
+                    desc: '1D Калман, перенос снарядов k, зоны, бины и тренд',
+                  },
+                ].map((eng) => (
+                  <button
+                    key={eng.id}
+                    onClick={() => handleUpdate({ engine: eng.id as any })}
+                    className={`p-2.5 rounded-none border text-left transition-all ${
+                      (settings.engine || 'v1') === eng.id
+                        ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                        : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white hover:border-yellow-400/50'
+                    }`}
+                  >
+                    <div className="text-xs font-mono font-bold uppercase">{eng.label}</div>
+                    <div className="text-[10px] font-mono mt-0.5 opacity-80">{eng.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Phase Selection: cut / maintain / bulk */}
+            <div className="pt-3 border-t border-neutral-900">
+              <label className="block text-xs font-mono uppercase text-white font-bold mb-1 flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Фаза тренировочного цикла</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                {[
+                  { id: 'cut', label: 'СУШКА', desc: 'сохранение силы' },
+                  { id: 'maintain', label: 'ПОДДЕРЖАНИЕ', desc: 'баланс' },
+                  { id: 'bulk', label: 'МАССАНАБОР', desc: 'рост силы' },
+                ].map((ph) => (
+                  <button
+                    key={ph.id}
+                    onClick={() => handleUpdate({ phase: ph.id as any })}
+                    className={`p-2 rounded-none border text-center transition-all ${
+                      (settings.phase || 'cut') === ph.id
+                        ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                        : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white hover:border-yellow-400/50'
+                    }`}
+                  >
+                    <div className="text-xs font-mono font-bold uppercase">{ph.label}</div>
+                    <div className="text-[10px] font-mono mt-0.5 opacity-80">{ph.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Suggestion Mode: conservative / normal / aggressive */}
+            <div className="pt-3 border-t border-neutral-900">
+              <label className="block text-xs font-mono uppercase text-white font-bold mb-1">
+                Характер подсказок (Mode)
+              </label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                {[
+                  { id: 'conservative', label: 'ОСТОРОЖНЫЙ', desc: 'μ - 0.5 SD' },
+                  { id: 'normal', label: 'ОБЫЧНЫЙ', desc: 'μ (базовый)' },
+                  { id: 'aggressive', label: 'СМЕЛЫЙ', desc: 'μ + 0.25 SD' },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleUpdate({ mode: m.id as any })}
+                    className={`p-2 rounded-none border text-center transition-all ${
+                      (settings.mode || 'normal') === m.id
+                        ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                        : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white hover:border-yellow-400/50'
+                    }`}
+                  >
+                    <div className="text-xs font-mono font-bold uppercase">{m.label}</div>
+                    <div className="text-[10px] font-mono mt-0.5 opacity-80">{m.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Warmups toggle */}
+            <div className="pt-3 border-t border-neutral-900 flex items-center justify-between">
+              <div>
+                <label className="block text-xs font-mono uppercase text-white font-bold">
+                  Разминочные подходы для базы
+                </label>
+                <p className="text-[11px] font-mono text-neutral-400">
+                  4 подхода (40%×5, 60%×3, 75%×2, 90%×1) от рабочего веса
+                </p>
+              </div>
+              <button
+                onClick={() => handleUpdate({ warmups: settings.warmups === false ? true : false })}
+                className={`px-3 py-1.5 text-xs font-mono font-black uppercase rounded-none border transition-all ${
+                  settings.warmups !== false
+                    ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]'
+                    : 'bg-neutral-950 text-neutral-500 border-neutral-800'
+                }`}
+              >
+                {settings.warmups !== false ? 'ВКЛ' : 'ВЫКЛ'}
+              </button>
+            </div>
+
+            {/* RPE Mode */}
+            <div className="pt-3 border-t border-neutral-900">
               <label className="block text-xs font-mono uppercase text-white font-bold mb-1">
                 Целевой RPE из диапазона
               </label>

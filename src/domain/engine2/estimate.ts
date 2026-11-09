@@ -1,7 +1,7 @@
 import type { Session, Slot, ExerciseLog, Settings } from '../types';
 import type { Family, Variant, Estimate, Bin, Trend } from './types';
 import { pct } from './pct';
-import { resolveFamilyForSlot, resolveVariantForEntry, DEFAULT_FAMILIES } from './families';
+import { resolveFamilyForSlot, resolveVariantForEntry, DEFAULT_FAMILIES, learnK } from './families';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 
 export interface SetObservation {
@@ -420,6 +420,26 @@ export function rebuildEstimates(
 
       const famEsts = result[family.id];
       const famBiases = biases[family.id];
+
+      // 3.1 K Learning & Calibration
+      const variantId = obs.variant.id;
+      const isCanonical = variantId === family.canonical;
+      const priorKValue = DEFAULT_FAMILIES[family.id]?.k[variantId]?.value ?? family.k[variantId]?.value ?? 1.0;
+      const currentK = family.k[variantId] ?? { value: priorKValue, conf: 'low', n: 1 };
+      const muCanon = famEsts.all.n > 0 ? famEsts.all.mu : 0;
+
+      if (!isCanonical) {
+        if (muCanon > 0) {
+          const zRaw = obs.zSession * currentK.value;
+          const kResult = learnK(currentK, priorKValue, zRaw, muCanon);
+          family.k[variantId] = kResult.k;
+          if (!kResult.shouldUpdateMu) {
+            // While k.n < 3, only calibrates k and does not update family mu
+            continue;
+          }
+        }
+      }
+
       const conf = family.k[obs.variant.id]?.conf ?? 'high';
 
       const kalmanInput = {
